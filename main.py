@@ -5,6 +5,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import aiohttp
 import discord
 from discord.ext import commands
 
@@ -32,6 +33,7 @@ intents.moderation = True
 
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 bot.allowed_guild_ids = ALLOWED_GUILD_IDS
+bot._keepalive_started = False
 
 
 @bot.tree.error
@@ -55,7 +57,9 @@ async def on_ready():
         logging.info("%s global komut senkronize edildi.", len(synced))
     except Exception as e:
         logging.error("Senkronizasyon hatası: %s", e)
-    bot.loop.create_task(_self_ping_loop())
+    if not bot._keepalive_started:
+        bot._keepalive_started = True
+        bot.loop.create_task(_self_ping_loop())
 
 
 @bot.event
