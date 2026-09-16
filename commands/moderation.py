@@ -12,11 +12,11 @@ class ModerationCog(commands.Cog):
 
     def _can_moderate(self, interaction, member):
         if member == interaction.guild.owner:
-            return False, "Sunucu sahibini moderasyona alamazsın."
+            return False, "You cannot moderate the server owner."
         if member.top_role >= interaction.user.top_role and interaction.user != interaction.guild.owner:
-            return False, "Kendi rolüne eşit veya üstü roldeki birini moderasyona alamazsın."
+            return False, "You cannot moderate someone with an equal or higher role than you."
         if member.top_role >= interaction.guild.me.top_role:
-            return False, "Botun rolü bu üyeden düşük, işlem yapamam."
+            return False, "My role is too low to moderate this member."
         return True, ""
 
     async def _send_dm(self, member, lines):
@@ -32,11 +32,11 @@ class ModerationCog(commands.Cog):
         else:
             await interaction.response.send_message(content, ephemeral=True)
 
-    @discord.app_commands.command(name="ban", description="Sunucudan bir üyeyi banla (DM bildirimi gönderir)")
+    @discord.app_commands.command(name="ban", description="Ban a member from the server (sends a DM notification)")
     @discord.app_commands.describe(
-        member="Banlanacak üye",
-        reason="Ban sebebi (DM'de gösterilir)",
-        delete_days="Son mesaj silme süresi (gün, 0-7)",
+        member="The member to ban",
+        reason="Reason for the ban (shown in the DM)",
+        delete_days="Delete message history for this many days (0-7)",
     )
     @discord.app_commands.checks.has_permissions(ban_members=True)
     @discord.app_commands.guild_only()
@@ -51,20 +51,20 @@ class ModerationCog(commands.Cog):
         delete_days = max(0, min(7, delete_days))
 
         dm_sent = await self._send_dm(member, [
-            f"🚫 **{interaction.guild.name}** sunucusundan **banlandın**.",
-            f"👤 Yetkili: {interaction.user.mention}",
-            f"📝 Sebep: {reason}",
+            f"🚫 You have been **banned** from **{interaction.guild.name}**.",
+            f"👤 Moderator: {interaction.user.mention}",
+            f"📝 Reason: {reason}",
         ])
 
         try:
-            await member.ban(reason=f"{interaction.user} tarafından: {reason}", delete_message_days=delete_days)
+            await member.ban(reason=f"Banned by {interaction.user}: {reason}", delete_message_days=delete_days)
         except discord.Forbidden:
-            await interaction.followup.send("❌ Botun yetkisi yetersiz (ban izni eksik veya rol düşük).", ephemeral=True)
+            await interaction.followup.send("❌ I don't have enough permissions to ban this member.", ephemeral=True)
             return
 
-        dm_note = " 📩 DM gönderildi." if dm_sent else " ⚠️ DM gönderilemedi (kapalı olabilir)."
+        dm_note = " 📩 DM sent." if dm_sent else " ⚠️ DM could not be sent (user has DMs closed)."
         await interaction.followup.send(
-            f"✅ **{member}** banlandı.{dm_note}\n📝 Sebep: {reason}",
+            f"✅ **{member}** has been banned.{dm_note}\n📝 Reason: {reason}",
             ephemeral=True,
         )
         self.log.info("BAN %s by %s in %s (%s) DM=%s", member, interaction.user, interaction.guild, reason, dm_sent)
@@ -72,17 +72,17 @@ class ModerationCog(commands.Cog):
     @ban.error
     async def ban_error(self, interaction, error):
         if isinstance(error, discord.app_commands.MissingPermissions):
-            await self._reply(interaction, "❌ Bunun için **Ban Members** iznine ihtiyacın var.")
+            await self._reply(interaction, "❌ You need the **Ban Members** permission to use this.")
 
-    @discord.app_commands.command(name="mute", description="Bir üyeyi geçici olarak sustur (timeout)")
+    @discord.app_commands.command(name="mute", description="Temporarily mute a member (timeout)")
     @discord.app_commands.describe(
-        member="Susturulacak üye",
-        minutes="Süre (dakika)",
-        reason="Susturma sebebi (DM'de gösterilir)",
+        member="The member to mute",
+        minutes="Duration in minutes",
+        reason="Reason for the mute (shown in the DM)",
     )
     @discord.app_commands.checks.has_permissions(moderate_members=True)
     @discord.app_commands.guild_only()
-    async def mute(self, interaction: discord.Interaction, member: discord.Member, minutes: int, reason: str = "Sebep belirtilmedi"):
+    async def mute(self, interaction: discord.Interaction, member: discord.Member, minutes: int, reason: str = "No reason provided"):
         await interaction.response.defer(ephemeral=True)
 
         ok, err = self._can_moderate(interaction, member)
@@ -94,21 +94,21 @@ class ModerationCog(commands.Cog):
         until = discord.utils.utcnow() + datetime.timedelta(minutes=minutes)
 
         dm_sent = await self._send_dm(member, [
-            f"🔇 **{interaction.guild.name}** sunucusunda **susturuldun**.",
-            f"⏱️ Süre: **{minutes} dakika**",
-            f"👤 Yetkili: {interaction.user.mention}",
-            f"📝 Sebep: {reason}",
+            f"🔇 You have been **muted** in **{interaction.guild.name}**.",
+            f"⏱️ Duration: **{minutes} minutes**",
+            f"👤 Moderator: {interaction.user.mention}",
+            f"📝 Reason: {reason}",
         ])
 
         try:
-            await member.timeout(until, reason=f"{interaction.user} tarafından: {reason}")
+            await member.timeout(until, reason=f"Muted by {interaction.user}: {reason}")
         except discord.Forbidden:
-            await interaction.followup.send("❌ Botun yetkisi yetersiz (Timeout izni eksik veya rol düşük).", ephemeral=True)
+            await interaction.followup.send("❌ I don't have enough permissions to mute this member.", ephemeral=True)
             return
 
-        dm_note = " 📩 DM gönderildi." if dm_sent else " ⚠️ DM gönderilemedi (kapalı olabilir)."
+        dm_note = " 📩 DM sent." if dm_sent else " ⚠️ DM could not be sent (user has DMs closed)."
         await interaction.followup.send(
-            f"✅ **{member}** susturuldu ({minutes} dk).{dm_note}\n📝 Sebep: {reason}",
+            f"✅ **{member}** has been muted ({minutes} min).{dm_note}\n📝 Reason: {reason}",
             ephemeral=True,
         )
         self.log.info("MUTE %s for %s min by %s in %s (%s) DM=%s", member, minutes, interaction.user, interaction.guild, reason, dm_sent)
@@ -116,36 +116,36 @@ class ModerationCog(commands.Cog):
     @mute.error
     async def mute_error(self, interaction, error):
         if isinstance(error, discord.app_commands.MissingPermissions):
-            await self._reply(interaction, "❌ Bunun için **Moderate Members** iznine ihtiyacın var.")
+            await self._reply(interaction, "❌ You need the **Moderate Members** permission to use this.")
 
-    @discord.app_commands.command(name="unban", description="Bir üyenin banını kaldır")
+    @discord.app_commands.command(name="unban", description="Unban a user")
     @discord.app_commands.describe(
-        user_id="Banı kaldırılacak kullanıcının ID'si",
-        reason="Sebep",
+        user_id="The ID of the user to unban",
+        reason="Reason",
     )
     @discord.app_commands.checks.has_permissions(ban_members=True)
     @discord.app_commands.guild_only()
-    async def unban(self, interaction: discord.Interaction, user_id: str, reason: str = "Belirtilmedi"):
+    async def unban(self, interaction: discord.Interaction, user_id: str, reason: str = "No reason provided"):
         await interaction.response.defer(ephemeral=True)
         try:
             user = await self.bot.fetch_user(int(user_id))
         except Exception:
-            await interaction.followup.send("❌ Geçersiz kullanıcı ID.", ephemeral=True)
+            await interaction.followup.send("❌ Invalid user ID.", ephemeral=True)
             return
         try:
-            await interaction.guild.unban(user, reason=f"{interaction.user} tarafından: {reason}")
+            await interaction.guild.unban(user, reason=f"Unbanned by {interaction.user}: {reason}")
         except discord.NotFound:
-            await interaction.followup.send("❌ Bu kullanıcı banlı değil.", ephemeral=True)
+            await interaction.followup.send("❌ This user is not banned.", ephemeral=True)
             return
         except discord.Forbidden:
-            await interaction.followup.send("❌ Botun yetkisi yetersiz.", ephemeral=True)
+            await interaction.followup.send("❌ I don't have enough permissions.", ephemeral=True)
             return
-        await interaction.followup.send(f"✅ **{user}** banı kaldırıldı.", ephemeral=True)
+        await interaction.followup.send(f"✅ **{user}** has been unbanned.", ephemeral=True)
 
     @unban.error
     async def unban_error(self, interaction, error):
         if isinstance(error, discord.app_commands.MissingPermissions):
-            await self._reply(interaction, "❌ Bunun için **Ban Members** iznine ihtiyacın var.")
+            await self._reply(interaction, "❌ You need the **Ban Members** permission to use this.")
 
 
 async def setup(bot):

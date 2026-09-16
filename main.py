@@ -42,21 +42,21 @@ async def on_tree_error(interaction: discord.Interaction, error: Exception):
     traceback.print_exc()
     try:
         if interaction.response.is_done():
-            await interaction.followup.send(f"⚠️ Hata: `{error}`", ephemeral=True)
+            await interaction.followup.send(f"⚠️ Error: `{error}`", ephemeral=True)
         else:
-            await interaction.response.send_message(f"⚠️ Hata: `{error}`", ephemeral=True)
+            await interaction.response.send_message(f"⚠️ Error: `{error}`", ephemeral=True)
     except Exception:
         pass
 
 
 @bot.event
 async def on_ready():
-    logging.info("%s olarak giriş yapıldı. Guilds: %s", bot.user, [g.name for g in bot.guilds])
+    logging.info("Logged in as %s. Guilds: %s", bot.user, [g.name for g in bot.guilds])
     try:
         synced = await bot.tree.sync()
-        logging.info("%s global komut senkronize edildi.", len(synced))
+        logging.info("Synced %s global commands.", len(synced))
     except Exception as e:
-        logging.error("Senkronizasyon hatası: %s", e)
+        logging.error("Sync error: %s", e)
     if not bot._keepalive_started:
         bot._keepalive_started = True
         bot.loop.create_task(_self_ping_loop())
@@ -67,9 +67,9 @@ async def on_guild_join(guild):
     if bot.allowed_guild_ids and guild.id not in bot.allowed_guild_ids:
         try:
             await guild.leave()
-            logging.info("İzin verilmeyen sunucudan ayrılındı: %s (%s)", guild.name, guild.id)
+            logging.info("Left unauthorized guild: %s (%s)", guild.name, guild.id)
         except Exception as e:
-            logging.error("Guild leave hatası: %s", e)
+            logging.error("Guild leave error: %s", e)
 
 
 def _start_health_server():
@@ -87,7 +87,7 @@ def _get_public_url():
 async def _self_ping_loop():
     url = _get_public_url()
     if not url:
-        logging.warning("[keepalive] PUBLIC_URL yok, self-ping kapalı")
+        logging.warning("[keepalive] PUBLIC_URL not set, self-ping disabled")
         return
     while True:
         try:
@@ -105,9 +105,9 @@ async def _load_extensions():
             name = f"commands.{filename[:-3]}"
             try:
                 await bot.load_extension(name)
-                logging.info("Modül yüklendi: %s", name)
+                logging.info("Loaded extension: %s", name)
             except Exception as e:
-                logging.error("Modül yüklenemedi %s: %s", name, e)
+                logging.error("Failed to load extension %s: %s", name, e)
 
 
 class _HealthHandler(BaseHTTPRequestHandler):
@@ -125,7 +125,7 @@ _start_health_server()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
-    print("❌ HATA: DISCORD_TOKEN bulunamadı!")
+    print("ERROR: DISCORD_TOKEN not found!")
     exit(1)
 
 
