@@ -123,6 +123,15 @@ class Database:
     def set_boost_end_message(self, guild_id, message):
         self.set_boost_settings(guild_id, end_message=message)
 
+    def set_boost_channel(self, guild_id, channel_id):
+        self.set_boost_settings(guild_id, channel_id=channel_id)
+
+    def set_boost_start_message(self, guild_id, message):
+        self.set_boost_settings(guild_id, start_message=message)
+
+    def set_boost_end_message(self, guild_id, message):
+        self.set_boost_settings(guild_id, end_message=message)
+
     def set_boost_settings(self, guild_id, channel_id=None, start_message=None, end_message=None):
         existing = self.get_boost_settings(guild_id)
         if existing is None:

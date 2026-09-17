@@ -35,7 +35,7 @@ class BoostCog(commands.Cog):
         settings["channel_id"] = channel.id
         self.bot.boost_settings[guild_id] = settings
         if self.bot.db is not None:
-            await self.bot.db.set_boost_channel(guild_id, channel.id)
+            self.bot.db.set_boost_channel(guild_id, channel.id)
         await interaction.followup.send(f"✅ Boost messages will now be posted in {channel.mention}.", ephemeral=True)
 
     @app_commands.command(
@@ -56,7 +56,7 @@ class BoostCog(commands.Cog):
         settings["boost_start_message"] = message
         self.bot.boost_settings[guild_id] = settings
         if self.bot.db is not None:
-            await self.bot.db.set_boost_start_message(guild_id, message)
+            self.bot.db.set_boost_start_message(guild_id, message)
         await interaction.followup.send("✅ Boost start message set.", ephemeral=True)
 
     @app_commands.command(
@@ -77,7 +77,7 @@ class BoostCog(commands.Cog):
         settings["boost_end_message"] = message
         self.bot.boost_settings[guild_id] = settings
         if self.bot.db is not None:
-            await self.bot.db.set_boost_end_message(guild_id, message)
+            self.bot.db.set_boost_end_message(guild_id, message)
         await interaction.followup.send("✅ Boost end message set.", ephemeral=True)
 
     @commands.Cog.listener()
