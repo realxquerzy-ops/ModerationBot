@@ -62,28 +62,16 @@ class Database:
 
     def init_schema(self):
         self.execute(
-            """
-            CREATE TABLE IF NOT EXISTS mod_log_settings (
-                guild_id BIGINT PRIMARY KEY,
-                channel_id BIGINT
-            )
-            """
+            "CREATE TABLE IF NOT EXISTS mod_log_settings ("
+            "guild_id BIGINT PRIMARY KEY, channel_id BIGINT)"
         )
         self.execute(
-            """
-            CREATE TABLE IF NOT EXISTS boost_settings (
-                guild_id BIGINT PRIMARY KEY,
-                channel_id BIGINT,
-                boost_start_message TEXT,
-                boost_end_message TEXT
-            )
-            """
+            "CREATE TABLE IF NOT EXISTS boost_settings ("
+            "guild_id BIGINT PRIMARY KEY, channel_id BIGINT, "
+            "boost_start_message TEXT, boost_end_message TEXT)"
         )
         self.execute(
-            """
-            ALTER TABLE mod_log_settings ADD COLUMN IF NOT EXISTS check_message TEXT
-            """
-            """
+            "ALTER TABLE mod_log_settings ADD COLUMN IF NOT EXISTS check_message TEXT"
         )
 
     def get_all_log_channels(self):
@@ -92,10 +80,8 @@ class Database:
 
     def set_log_channel(self, guild_id, channel_id):
         self.execute(
-            """
-            INSERT INTO mod_log_settings (guild_id, channel_id) VALUES (%s, %s)
-            ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id
-            """,
+            "INSERT INTO mod_log_settings (guild_id, channel_id) VALUES (%s, %s) "
+            "ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id",
             (guild_id, channel_id),
         )
 
@@ -132,10 +118,8 @@ class Database:
         existing = self.get_boost_settings(guild_id)
         if existing is None:
             self.execute(
-                """
-                INSERT INTO boost_settings (guild_id, channel_id, boost_start_message, boost_end_message)
-                VALUES (%s, %s, %s, %s)
-                """,
+                "INSERT INTO boost_settings (guild_id, channel_id, boost_start_message, boost_end_message) "
+                "VALUES (%s, %s, %s, %s)",
                 (
                     guild_id,
                     channel_id,
@@ -145,13 +129,9 @@ class Database:
             )
         else:
             self.execute(
-                """
-                UPDATE boost_settings
-                SET channel_id = COALESCE(%s, channel_id),
-                    boost_start_message = COALESCE(%s, boost_start_message),
-                    boost_end_message = COALESCE(%s, boost_end_message)
-                WHERE guild_id = %s
-                """,
+                "UPDATE boost_settings SET channel_id = COALESCE(%s, channel_id), "
+                "boost_start_message = COALESCE(%s, boost_start_message), "
+                "boost_end_message = COALESCE(%s, boost_end_message) WHERE guild_id = %s",
                 (channel_id, start_message, end_message, guild_id),
             )
 
