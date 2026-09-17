@@ -38,6 +38,7 @@ bot.allowed_guild_ids = ALLOWED_GUILD_IDS
 bot._keepalive_started = False
 bot.db = None
 bot.log_channels = {}
+bot.boost_settings = {}
 
 
 @bot.tree.error
@@ -155,11 +156,19 @@ def _init_db():
         database.init_schema()
         bot.db = database
         bot.log_channels = database.get_all_log_channels()
+        try:
+            bot.boost_settings = database.get_all_boost_settings()
+        except psycopg2.errors.UndefinedTable:
+            logging.warning("[db] boost_settings table missing; creating it")
+            database.init_schema()
+            bot.boost_settings = database.get_all_boost_settings()
         logging.info("[db] loaded %s log channel setting(s)", len(bot.log_channels))
+        logging.info("[db] loaded %s boost setting(s)", len(bot.boost_settings))
     except Exception as e:
         logging.error("[db] init failed: %s", e)
         bot.db = None
         bot.log_channels = {}
+        bot.boost_settings = {}
 
 
 async def main():
