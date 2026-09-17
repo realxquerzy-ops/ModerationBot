@@ -57,8 +57,11 @@ async def on_tree_error(interaction: discord.Interaction, error: Exception):
 async def on_ready():
     logging.info("Logged in as %s. Guilds: %s", bot.user, [g.name for g in bot.guilds])
     try:
-        synced = await bot.tree.sync()
-        logging.info("Synced %s global commands.", len(synced))
+        await bot.tree.sync()
+        for guild in bot.guilds:
+            bot.tree.copy_global_to(guild=guild)
+            await bot.tree.sync(guild=guild)
+        logging.info("Synced commands to %s guild(s) (+ global).", len(bot.guilds))
     except Exception as e:
         logging.error("Sync error: %s", e)
     if not bot._keepalive_started:
@@ -74,6 +77,13 @@ async def on_guild_join(guild):
             logging.info("Left unauthorized guild: %s (%s)", guild.name, guild.id)
         except Exception as e:
             logging.error("Guild leave error: %s", e)
+        return
+    try:
+        bot.tree.copy_global_to(guild=guild)
+        await bot.tree.sync(guild=guild)
+        logging.info("Synced commands to new guild: %s (%s)", guild.name, guild.id)
+    except Exception as e:
+        logging.error("Guild join sync error: %s", e)
 
 
 def _start_health_server():
