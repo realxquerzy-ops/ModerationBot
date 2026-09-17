@@ -128,9 +128,13 @@ class LoggingCog(commands.Cog):
         description="Set the channel where server logs are posted (admin only)",
     )
     @discord.app_commands.describe(channel="The channel to post logs in")
-    @discord.app_commands.checks.has_permissions(manage_guild=True)
     @discord.app_commands.guild_only()
     async def logsetchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        if not interaction.user.guild_permissions.manage_guild:
+            await interaction.response.send_message(
+                "❌ You need the **Manage Server** permission to use this.", ephemeral=True
+            )
+            return
         await interaction.response.defer(ephemeral=True)
         self.bot.log_channels[interaction.guild_id] = channel.id
         if self.bot.db is not None:
@@ -148,18 +152,6 @@ class LoggingCog(commands.Cog):
         await interaction.followup.send(
             f"✅ Logs will now be posted in {channel.mention}.", ephemeral=True
         )
-
-    @logsetchannel.error
-    async def logsetchannel_error(self, interaction, error):
-        if isinstance(error, discord.app_commands.MissingPermissions):
-            if interaction.response.is_done():
-                await interaction.followup.send(
-                    "❌ You need the **Manage Server** permission to use this.", ephemeral=True
-                )
-            else:
-                await interaction.response.send_message(
-                    "❌ You need the **Manage Server** permission to use this.", ephemeral=True
-                )
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
