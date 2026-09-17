@@ -9,6 +9,8 @@ import aiohttp
 import discord
 from discord.ext import commands
 
+from db import Database
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -34,6 +36,8 @@ intents.moderation = True
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 bot.allowed_guild_ids = ALLOWED_GUILD_IDS
 bot._keepalive_started = False
+bot.db = None
+bot.log_channels = {}
 
 
 @bot.tree.error
@@ -129,7 +133,27 @@ if not TOKEN:
     exit(1)
 
 
+def _init_db():
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        logging.warning("[db] DATABASE_URL not set; log settings will not persist")
+        bot.db = None
+        bot.log_channels = {}
+        return
+    try:
+        database = Database(url)
+        database.init_schema()
+        bot.db = database
+        bot.log_channels = database.get_all_log_channels()
+        logging.info("[db] loaded %s log channel setting(s)", len(bot.log_channels))
+    except Exception as e:
+        logging.error("[db] init failed: %s", e)
+        bot.db = None
+        bot.log_channels = {}
+
+
 async def main():
+    _init_db()
     await _load_extensions()
     await bot.start(TOKEN)
 
