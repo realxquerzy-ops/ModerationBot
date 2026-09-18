@@ -1,30 +1,102 @@
-import logging
+import datetime as _dt
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+import db
+from .components.boost_panel import BOOST_START_DEFAULT, BOOST_END_DEFAULT, ROLE_UNSET
 
-BOOST_START_DEFAULT = "Tysm for boosting the server! {user}"
-BOOST_END_DEFAULT = "A boost just ended. Thanks for boosting the server earlier, {user}!"
+import logging
+
+logger = logging.getLogger("modbot.boost")
 
 
 class BoostCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.log = logging.getLogger("modbot.boost")
+        self._panel_message_cache: dict[int, int] = {}
 
-    def _has_manage(self, interaction):
-        return interaction.user.guild_permissions.manage_guild
+    def _require_manage(self, interaction) -> bool:
+        return bool(interaction.user.guild_permissions.manage_guild)
+
+    def _serialize_history(self, rows):
+        out = []
+        for row in rows:
+            user_id, event_type, occurred = int(row[0]), row[1], row[2]
+            icon = "🟢" if event_type == "start" else "🔴"
+            out.append(f"{icon} <@{user_id}> `{event_type}` · <t:{int(occurred.timestamp())}:R>")
+        return "\n".join(out) if out else "No boost events yet."
+
+    async def _render_panel(self, guild: discord.Guild, channel: discord.TextChannel):
+        settings = self.bot.boost_settings.get(guild.id) or {}
+        embed = discord.Embed(
+            title="Server Boosts",
+            description=(
+                "This server is boosted! Thanks to everyone who keeps the perks alive."
+            ),
+            color=discord.Color.from_str("#f47fff"),
+        )
+        embed.add_field(
+            name="Server Boosts",
+            value=str(guild.premium_subscription_count),
+            inline=True,
+        )
+        boosters = sorted(
+            (m for m in guild.members if m.premium_since is not None),
+            key=lambda m: (m.premium_since or _dt.datetime.min.replace(tzinfo=_dt.timezone.utc)),
+            reverse=True,
+        )
+        embed.add_field(
+            name="Boosters",
+            value="\n".join(m.mention for m in boosters[:20]) or "No boosters",
+            inline=True,
+        )
+        role = guild.premium_subscriber_role
+        embed.add_field(
+            name="Boost Role",
+            value=role.mention if role is not None else ROLE_UNSET,
+            inline=True,
+        )
+        history = []
+        if self.bot.db is not None:
+            history = self.bot.db.get_recent_boost_history(guild.id, 8)
+        embed.add_field(
+            name="Recent Boost History",
+            value=self._serialize_history(history),
+            inline=False,
+        )
+        embed.set_footer(text=f"Unique boosters: {len(set(m.id for m in boosters))}")
+        cached = self._panel_message_cache.get(guild.id)
+        if cached:
+            try:
+                msg = await channel.fetch_message(cached)
+                await msg.edit(embed=embed)
+                return msg
+            except Exception:
+                pass
+        try:
+            msgs = [m async for m in channel.history(limit=30) if m.author.id == self.bot.user.id]
+        except Exception:
+            msgs = []
+        for m in msgs:
+            if m.embeds and m.embeds[0].title == "Server Boosts":
+                await m.edit(embed=embed)
+                self._panel_message_cache[guild.id] = m.id
+                return m
+        msg = await channel.send(embed=embed)
+        self._panel_message_cache[guild.id] = msg.id
+        return msg
 
     @app_commands.command(
         name="boostchannel",
-        description="Set the channel where boost start/end messages are sent.",
+        description="Set the channel where the Server Boosts panel + boost messages are posted.",
     )
-    @app_commands.describe(channel="Channel to post boost messages in")
+    @app_commands.describe(channel="Channel to publish the boost panel / messages in")
     @app_commands.guild_only()
     async def boostchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        if not self._has_manage(interaction):
+        if not self._require_manage(interaction):
             await interaction.response.send_message(
                 "❌ You need **Manage Server** permission.", ephemeral=True
             )
@@ -35,17 +107,23 @@ class BoostCog(commands.Cog):
         settings["channel_id"] = channel.id
         self.bot.boost_settings[guild_id] = settings
         if self.bot.db is not None:
-            self.bot.db.set_boost_channel(guild_id, channel.id)
-        await interaction.followup.send(f"✅ Boost messages will now be posted in {channel.mention}.", ephemeral=True)
+            self.bot.db.set_boost_settings(
+                guild_id, channel_id=channel.id
+            )
+        await self._render_panel(interaction.guild, channel)
+        await interaction.followup.send(
+            f"✅ Boost panel posted in {channel.mention}. It stays in sync with boosts automatically.",
+            ephemeral=True,
+        )
 
     @app_commands.command(
         name="booststartmessage",
-        description="Set the message shown when someone boosts the server. Use {user} for the booster.",
+        description="Set the extra message shown when someone starts boosting.",
     )
-    @app_commands.describe(message="Message text; {user} becomes the booster's mention")
     @app_commands.guild_only()
+    @app_commands.describe(message="Message in the panel channel; {user} becomes the booster")
     async def booststartmessage(self, interaction: discord.Interaction, message: str):
-        if not self._has_manage(interaction):
+        if not self._require_manage(interaction):
             await interaction.response.send_message(
                 "❌ You need **Manage Server** permission.", ephemeral=True
             )
@@ -56,17 +134,21 @@ class BoostCog(commands.Cog):
         settings["boost_start_message"] = message
         self.bot.boost_settings[guild_id] = settings
         if self.bot.db is not None:
-            self.bot.db.set_boost_start_message(guild_id, message)
-        await interaction.followup.send("✅ Boost start message set.", ephemeral=True)
+            self.bot.db.set_boost_settings(
+                guild_id, start_message=message
+            )
+        await interaction.followup.send(
+            "✅ Boost start message saved.", ephemeral=True
+        )
 
     @app_commands.command(
         name="boostendmessage",
-        description="Set the message shown when a boost ends. Use {user} for the ex-booster.",
+        description="Set the extra message shown when a boost ends.",
     )
-    @app_commands.describe(message="Message text; {user} becomes the ex-booster's mention")
     @app_commands.guild_only()
+    @app_commands.describe(message="Message in the panel channel; {user} becomes the ex-booster")
     async def boostendmessage(self, interaction: discord.Interaction, message: str):
-        if not self._has_manage(interaction):
+        if not self._require_manage(interaction):
             await interaction.response.send_message(
                 "❌ You need **Manage Server** permission.", ephemeral=True
             )
@@ -77,26 +159,58 @@ class BoostCog(commands.Cog):
         settings["boost_end_message"] = message
         self.bot.boost_settings[guild_id] = settings
         if self.bot.db is not None:
-            self.bot.db.set_boost_end_message(guild_id, message)
-        await interaction.followup.send("✅ Boost end message set.", ephemeral=True)
+            self.bot.db.set_boost_settings(
+                guild_id, end_message=message
+            )
+        await interaction.followup.send(
+            "✅ Boost end message saved.", ephemeral=True
+        )
+
+    @app_commands.command(
+        name="booststats",
+        description="(temporary) refresh the Server Boosts panel manually without boosting.",
+    )
+    @app_commands.guild_only()
+    async def booststats(self, interaction: discord.Interaction):
+        if not self._require_manage(interaction):
+            await interaction.response.send_message(
+                "❌ You need **Manage Server** permission.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        settings = self.bot.boost_settings.get(interaction.guild_id) or {}
+        channel = interaction.guild.get_channel(settings.get("channel_id"))
+        if channel is None:
+            await interaction.followup.send(
+                "❌ No boost channel set. Use `/boostchannel` first.", ephemeral=True
+            )
+            return
+        await self._render_panel(interaction.guild, channel)
+        await interaction.followup.send("✨ Panel refreshed.", ephemeral=True)
 
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
         if before.premium_since == after.premium_since:
             return
         guild = after.guild
-        settings = self.bot.boost_settings.get(guild.id)
-        if not settings or not settings.get("channel_id"):
-            return
-        channel = guild.get_channel(settings["channel_id"])
+        settings = self.bot.boost_settings.get(guild.id) or {}
+        channel = guild.get_channel(settings.get("channel_id"))
         if channel is None:
             return
         boost_started = before.premium_since is None and after.premium_since is not None
+        event = "start" if boost_started else "end"
+        if self.bot.db is not None:
+            try:
+                self.bot.db.add_boost_history(guild.id, after.id, event)
+            except Exception as e:
+                self.log.warning("boost history insert failed: %s", e)
+        try:
+            await self._render_panel(guild, channel)
+        except Exception as e:
+            self.log.warning("boost panel refresh failed: %s", e)
         template = settings.get(
             "boost_start_message" if boost_started else "boost_end_message"
-        )
-        if not template:
-            template = BOOST_START_DEFAULT if boost_started else BOOST_END_DEFAULT
+        ) or (BOOST_START_DEFAULT if boost_started else BOOST_END_DEFAULT)
         text = template.replace("{user}", after.mention)
         try:
             await channel.send(text)
