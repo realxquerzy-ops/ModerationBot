@@ -166,28 +166,6 @@ class BoostCog(commands.Cog):
             "✅ Boost end message saved.", ephemeral=True
         )
 
-    @app_commands.command(
-        name="booststats",
-        description="(temporary) refresh the Server Boosts panel manually without boosting.",
-    )
-    @app_commands.guild_only()
-    async def booststats(self, interaction: discord.Interaction):
-        if not self._require_manage(interaction):
-            await interaction.response.send_message(
-                "❌ You need **Manage Server** permission.", ephemeral=True
-            )
-            return
-        await interaction.response.defer(ephemeral=True)
-        settings = self.bot.boost_settings.get(interaction.guild_id) or {}
-        channel = interaction.guild.get_channel(settings.get("channel_id"))
-        if channel is None:
-            await interaction.followup.send(
-                "❌ No boost channel set. Use `/boostchannel` first.", ephemeral=True
-            )
-            return
-        await self._render_panel(interaction.guild, channel)
-        await interaction.followup.send("✨ Panel refreshed.", ephemeral=True)
-
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
         if before.premium_since == after.premium_since:
