@@ -116,56 +116,6 @@ class BoostCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(
-        name="booststartmessage",
-        description="Set the extra message shown when someone starts boosting.",
-    )
-    @app_commands.guild_only()
-    @app_commands.describe(message="Message in the panel channel; {user} becomes the booster")
-    async def booststartmessage(self, interaction: discord.Interaction, message: str):
-        if not self._require_manage(interaction):
-            await interaction.response.send_message(
-                "❌ You need **Manage Server** permission.", ephemeral=True
-            )
-            return
-        await interaction.response.defer(ephemeral=True)
-        guild_id = interaction.guild_id
-        settings = self.bot.boost_settings.get(guild_id) or {}
-        settings["boost_start_message"] = message
-        self.bot.boost_settings[guild_id] = settings
-        if self.bot.db is not None:
-            self.bot.db.set_boost_settings(
-                guild_id, start_message=message
-            )
-        await interaction.followup.send(
-            "✅ Boost start message saved.", ephemeral=True
-        )
-
-    @app_commands.command(
-        name="boostendmessage",
-        description="Set the extra message shown when a boost ends.",
-    )
-    @app_commands.guild_only()
-    @app_commands.describe(message="Message in the panel channel; {user} becomes the ex-booster")
-    async def boostendmessage(self, interaction: discord.Interaction, message: str):
-        if not self._require_manage(interaction):
-            await interaction.response.send_message(
-                "❌ You need **Manage Server** permission.", ephemeral=True
-            )
-            return
-        await interaction.response.defer(ephemeral=True)
-        guild_id = interaction.guild_id
-        settings = self.bot.boost_settings.get(guild_id) or {}
-        settings["boost_end_message"] = message
-        self.bot.boost_settings[guild_id] = settings
-        if self.bot.db is not None:
-            self.bot.db.set_boost_settings(
-                guild_id, end_message=message
-            )
-        await interaction.followup.send(
-            "✅ Boost end message saved.", ephemeral=True
-        )
-
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
         if before.premium_since == after.premium_since:
