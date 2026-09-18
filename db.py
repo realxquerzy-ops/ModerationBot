@@ -132,6 +132,15 @@ class Database:
     def set_boost_end_message(self, guild_id, message):
         self.set_boost_settings(guild_id, end_message=message)
 
+    def set_boost_channel(self, guild_id, channel_id):
+        self.set_boost_settings(guild_id, channel_id=channel_id)
+
+    def set_boost_start_message(self, guild_id, message):
+        self.set_boost_settings(guild_id, start_message=message)
+
+    def set_boost_end_message(self, guild_id, message):
+        self.set_boost_settings(guild_id, end_message=message)
+
     def set_boost_settings(self, guild_id, channel_id=None, start_message=None, end_message=None):
         existing = self.get_boost_settings(guild_id)
         if existing is None:
@@ -155,3 +164,31 @@ class Database:
 
     def clear_boost_settings(self, guild_id):
         self.execute("DELETE FROM boost_settings WHERE guild_id = %s", (guild_id,))
+
+    def log_boost_event(self, guild_id, user_id, event_type):
+        self.execute(
+            "CREATE TABLE IF NOT EXISTS boost_history ("
+            "id BIGSERIAL PRIMARY KEY, guild_id BIGINT, user_id BIGINT, "
+            "event_type TEXT NOT NULL CHECK (event_type IN ('start','end')), "
+            "occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+            ")"
+        )
+        self.execute(
+            "INSERT INTO boost_history (guild_id, user_id, event_type) VALUES (%s, %s, %s)",
+            (guild_id, user_id, event_type),
+        )
+
+    def get_recent_boost_history(self, guild_id, limit=8):
+        rows = self.fetchall(
+            "SELECT user_id, event_type, occurred_at FROM boost_history "
+            "WHERE guild_id = %s ORDER BY occurred_at DESC LIMIT %s",
+            (guild_id, limit),
+        )
+        return [(int(u), t, ts) for u, t, ts in rows]
+
+
+    def add_boost_history(self, guild_id, user_id, event_type):
+        self.execute(
+            "INSERT INTO boost_history (guild_id, user_id, event_type) VALUES (%s, %s, %s)",
+            (guild_id, user_id, event_type),
+        )
