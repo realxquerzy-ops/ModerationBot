@@ -43,14 +43,6 @@ class SetupCog(commands.Cog):
             ),
             inline=False,
         )
-        embed.add_field(
-            name="📢 Announcements",
-            value=(
-                "The announce panel with reaction roles for the resource "
-                "guild is managed automatically by the bot."
-            ),
-            inline=False,
-        )
         embed.set_footer(text="Tips: custom emojis are supported — just paste them.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
