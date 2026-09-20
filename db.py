@@ -83,6 +83,12 @@ class Database:
             "occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
             ")"
         )
+        self.execute(
+            "CREATE TABLE IF NOT EXISTS reaction_roles ("
+            "id BIGSERIAL PRIMARY KEY, guild_id BIGINT NOT NULL, channel_id BIGINT NOT NULL, "
+            "message_id BIGINT NOT NULL, emoji TEXT NOT NULL, role_id BIGINT NOT NULL, "
+            "UNIQUE (message_id, emoji))"
+        )
 
     def get_all_log_channels(self):
         rows = self.fetchall("SELECT guild_id, channel_id FROM mod_log_settings")
@@ -212,3 +218,35 @@ class Database:
             "INSERT INTO boost_history (guild_id, user_id, event_type) VALUES (%s, %s, %s)",
             (guild_id, user_id, event_type),
         )
+
+    def set_reaction_role(self, guild_id, channel_id, message_id, emoji, role_id):
+        self.execute(
+            "INSERT INTO reaction_roles (guild_id, channel_id, message_id, emoji, role_id) "
+            "VALUES (%s, %s, %s, %s, %s) "
+            "ON CONFLICT (message_id, emoji) DO UPDATE SET role_id = EXCLUDED.role_id",
+            (guild_id, channel_id, message_id, emoji, role_id),
+        )
+
+    def get_reaction_roles(self, guild_id):
+        rows = self.fetchall(
+            "SELECT channel_id, message_id, emoji, role_id FROM reaction_roles "
+            "WHERE guild_id = %s ORDER BY id",
+            (guild_id,),
+        )
+        return [
+            {
+                "channel_id": int(c),
+                "message_id": int(m),
+                "emoji": e,
+                "role_id": int(r),
+            }
+            for c, m, e, r in rows
+        ]
+
+    def get_message_reaction_roles(self, guild_id, channel_id, message_id):
+        rows = self.fetchall(
+            "SELECT emoji, role_id FROM reaction_roles "
+            "WHERE guild_id = %s AND channel_id = %s AND message_id = %s",
+            (guild_id, channel_id, message_id),
+        )
+        return [{"emoji": e, "role_id": int(r)} for e, r in rows]
