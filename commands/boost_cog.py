@@ -27,7 +27,7 @@ class BoostCog(commands.Cog):
             user_id, event_type, occurred = int(row[0]), row[1], row[2]
             icon = "🟢" if event_type == "start" else "🔴"
             out.append(f"{icon} <@{user_id}> `{event_type}` · <t:{int(occurred.timestamp())}:R>")
-        return "\n".join(out) if out else "No boost events yet."
+        return "\n".join(out) if out else "None"
 
     async def _render_panel(self, guild: discord.Guild, channel: discord.TextChannel):
         settings = self.bot.boost_settings.get(guild.id) or {}
@@ -53,7 +53,10 @@ class BoostCog(commands.Cog):
             value="\n".join(m.mention for m in boosters[:20]) or "No boosters",
             inline=True,
         )
-        role = guild.premium_subscriber_role
+        role_id = settings.get("boost_role_id")
+        role = guild.get_role(role_id) if role_id else None
+        if role is None:
+            role = guild.premium_subscriber_role
         embed.add_field(
             name="Boost Role",
             value=role.mention if role is not None else ROLE_UNSET,
@@ -114,6 +117,38 @@ class BoostCog(commands.Cog):
         await interaction.followup.send(
             f"✅ Boost panel posted in {channel.mention}. It stays in sync with boosts automatically.",
             ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="boostrole",
+        description="Set the boost role shown on the Server Boosts panel.",
+    )
+    @app_commands.describe(role="Role displayed as the server's booster role")
+    @app_commands.guild_only()
+    async def boostrole(self, interaction: discord.Interaction, role: discord.Role):
+        if not self._require_manage(interaction):
+            await interaction.response.send_message(
+                "❌ You need **Manage Server** permission.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild_id
+        settings = self.bot.boost_settings.get(guild_id) or {}
+        settings["boost_role_id"] = role.id
+        self.bot.boost_settings[guild_id] = settings
+        if self.bot.db is not None:
+            try:
+                self.bot.db.set_boost_role(guild_id, role.id)
+            except Exception as e:
+                self.log.warning("boost role set failed: %s", e)
+        channel = interaction.guild.get_channel(settings.get("channel_id")) if settings.get("channel_id") else None
+        if channel is not None:
+            try:
+                await self._render_panel(interaction.guild, channel)
+            except Exception as e:
+                self.log.warning("boost panel refresh after role set failed: %s", e)
+        await interaction.followup.send(
+            f"✅ Boost role set to {role.mention}.", ephemeral=True
         )
 
     @commands.Cog.listener()
