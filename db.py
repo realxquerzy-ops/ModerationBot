@@ -73,6 +73,13 @@ class Database:
         self.execute(
             "ALTER TABLE mod_log_settings ADD COLUMN IF NOT EXISTS check_message TEXT"
         )
+        self.execute(
+            "CREATE TABLE IF NOT EXISTS boost_history ("
+            "id BIGSERIAL PRIMARY KEY, guild_id BIGINT, user_id BIGINT, "
+            "event_type TEXT NOT NULL CHECK (event_type IN ('start','end')), "
+            "occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+            ")"
+        )
 
     def get_all_log_channels(self):
         rows = self.fetchall("SELECT guild_id, channel_id FROM mod_log_settings")
@@ -179,11 +186,14 @@ class Database:
         )
 
     def get_recent_boost_history(self, guild_id, limit=8):
-        rows = self.fetchall(
-            "SELECT user_id, event_type, occurred_at FROM boost_history "
-            "WHERE guild_id = %s ORDER BY occurred_at DESC LIMIT %s",
-            (guild_id, limit),
-        )
+        try:
+            rows = self.fetchall(
+                "SELECT user_id, event_type, occurred_at FROM boost_history "
+                "WHERE guild_id = %s ORDER BY occurred_at DESC LIMIT %s",
+                (guild_id, limit),
+            )
+        except Exception:
+            return []
         return [(int(u), t, ts) for u, t, ts in rows]
 
 
