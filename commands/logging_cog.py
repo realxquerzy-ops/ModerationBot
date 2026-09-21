@@ -219,6 +219,14 @@ class LoggingCog(commands.Cog):
             embed.set_footer(text=f"ID: {after.id}")
             await self._send(guild, embed)
 
+        if before.display_avatar.url != after.display_avatar.url:
+            embed = self._member_embed(after, "Profile picture changed", discord.Color.blurple())
+            embed.description = f"{after.mention} changed their profile picture."
+            embed.add_field(name="Before", value=f"[Link]({before.display_avatar.url})", inline=True)
+            embed.set_image(url=after.display_avatar.url)
+            embed.set_footer(text=f"ID: {after.id}")
+            await self._send(guild, embed)
+
     @commands.Cog.listener()
     async def on_message_delete(self, message):
         if message.guild is None or message.author.bot:
