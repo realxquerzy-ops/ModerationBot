@@ -33,9 +33,11 @@ class BoostCog(commands.Cog):
         settings = self.bot.boost_settings.get(guild.id) or {}
         embed = discord.Embed(
             title="Server Boosts",
-            description=(
-                "This server is boosted! Thanks to everyone who keeps the perks alive."
-            ),
+description=(
+            "This server is boosted! Thanks to everyone who keeps the perks alive."
+            if guild.premium_subscription_count > 0
+            else "This server has no boosts yet. Boost to unlock perks!"
+        ),
             color=discord.Color.from_str("#f47fff"),
         )
         embed.add_field(
