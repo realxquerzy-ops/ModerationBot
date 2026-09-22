@@ -46,12 +46,18 @@ log = logging.getLogger("web")
 _REACTION_RE = re.compile(r"<((?P<anim>a)?:(?P<name>[^:>]+):(?P<id>\d+))>")
 
 
-def _emoji_token(raw: str) -> str:
-    m = _REACTION_RE.match(raw.strip())
+def _emoji_token(raw: str, guild=None):
+    s = raw.strip()
+    m = _REACTION_RE.match(s)
     if m:
         anim = "a" if m.group("anim") else ""
         return f"custom:{m.group('id')}:{m.group('name')}:{anim}"
-    return raw.strip()
+    m2 = re.fullmatch(r":([^:\s>]+):", s)
+    if m2 and guild is not None:
+        found = discord.utils.get(guild.emojis, name=m2.group(1))
+        if found is not None:
+            return f"custom:{found.id}:{found.name}:{'a' if found.animated else ''}"
+    return s
 
 
 def _partial_emoji(token: str):
@@ -356,7 +362,7 @@ async def _apply_reaction_create(bot, guild, db, data):
         rid = r.get("role_id")
         if not emo or not rid:
             continue
-        rows.append((_emoji_token(emo), int(rid)))
+        rows.append((_emoji_token(emo, guild), int(rid)))
     if not rows:
         return {"ok": False, "error": "Add at least one emoji + role row."}
     token_seen = set()
@@ -367,9 +373,16 @@ async def _apply_reaction_create(bot, guild, db, data):
         token_seen.add(token)
         deduped.append((token, rid))
     lines = []
+    role_warnings = []
     for token, rid in deduped:
         role = guild.get_role(rid)
         lines.append(f"{_emoji_display(token)} → {role.mention if role else f'<@&{rid}>'}")
+        if role is not None:
+            me = guild.me
+            if not me.guild_permissions.manage_roles:
+                role_warnings.append(f"{role.name}: I lack Manage Roles permission.")
+            elif role >= me.top_role:
+                role_warnings.append(f"{role.name}: it is above my highest role.")
     embed_desc = description or "\n".join(lines) or None
     embed_color = discord.Color.blue()
     try:
@@ -392,6 +405,7 @@ async def _apply_reaction_create(bot, guild, db, data):
         "ok": True,
         "url": f"https://discord.com/channels/{guild.id}/{channel.id}/{msg.id}",
         "warnings": warnings,
+        "role_warnings": role_warnings,
     }
 
 

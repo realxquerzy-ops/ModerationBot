@@ -471,8 +471,13 @@ $("rr_create").addEventListener("click", async () => {
       }),
     });
     await load(state.guild.id);
-    const extra = res.warnings ? ` But ${res.warnings} emoji could not be added (double-check emoji names).` : "";
-    setStatus("st_reaction", "Panel posted: " + res.url + extra, true);
+    const parts = [];
+    if (res.url) parts.push(res.url);
+    if (res.warnings) parts.push(`${res.warnings} emoji could not be added (double-check emoji names).`);
+    if (res.role_warnings && res.role_warnings.length) {
+      parts.push("Role warnings: " + res.role_warnings.join(" "));
+    }
+    setStatus("st_reaction", "Panel posted" + (parts.length ? ": " + parts.join(" ") : "."), true);
   } catch (e) { setStatus("st_reaction", "Error: " + e.message, false); }
 });
 
