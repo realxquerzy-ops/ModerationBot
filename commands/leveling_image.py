@@ -72,9 +72,11 @@ def render_leaderboard(entries, guild_name):
     _round_rect_pill(draw, 24, 24, width - 24, height - 24, 24, _BG, outline=(54, 58, 63))
 
     _round_rect_pill(draw, 24, 24, width - 24, 198, 24, _HEADER_BG)
-    draw.text((64, 54), "Server Leveling Leaderboard", font=_font(40, True), fill=_NAME)
-    draw.text((66, 116), guild_name, font=_font(28, True), fill=_ACCENT)
-    draw.text((66, 158), "Sorted by total XP earned", font=_font(20), fill=_MUTED)
+    title_font = _font(40, True)
+    title = _fit_name(draw, "# " + str(guild_name), title_font, (width - 24) - 64 - 64)
+    draw.text((64, 46), title, font=title_font, fill=_NAME)
+    draw.text((66, 112), "Server Leveling Leaderboard", font=_font(24, True), fill=_ACCENT)
+    draw.text((66, 152), "Sorted by total XP earned", font=_font(19), fill=_MUTED)
 
     for i, (name_part, av_img, level, into, need, xp) in enumerate(entries):
         y = top + i * row_h
