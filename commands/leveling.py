@@ -7,7 +7,7 @@ import aiohttp
 import discord
 from discord.ext import commands
 
-from .leveling_image import render_leaderboard
+from .leveling_image import render_level_card, render_leaderboard
 
 
 class LevelingCog(commands.Cog):
@@ -210,38 +210,6 @@ class LevelingCog(commands.Cog):
     def _is_admin(self, interaction):
         return interaction.user.guild_permissions.manage_guild or interaction.user.id in getattr(self.bot, "whitelisted_users", ())
 
-    def _rank_embed(self, user, guild):
-        rec = self.bot.db.get_leveling(guild.id, user.id)
-        if rec is None:
-            level, into, need = 1, 0, self.xp_for_level(1)
-            xp, messages = 0, 0
-        else:
-            xp = rec["xp"]
-            messages = rec["total_messages"]
-            level, into, need = self.level_progress(xp)
-
-        rank, total = self.bot.db.get_leveling_rank(guild.id, user.id)
-        pct = max(0.0, min(1.0, into / need if need > 0 else 1.0))
-        bar = "▓" * int(round(10 * pct)) + "░" * (10 - int(round(10 * pct)))
-
-        embed = discord.Embed(
-            title=f"📊 {user.display_name}'s Level",
-            description=(
-                f"🔹 **Level:** `{level}`\n"
-                f"📈 **Rank:** `#{rank}` / {total}"
-            ),
-            color=discord.Color.gold(),
-        )
-        embed.add_field(name="🎯 XP", value=f"`{int(xp)}` total", inline=True)
-        embed.add_field(name="💬 Messages", value=f"`{messages}`", inline=True)
-        embed.add_field(
-            name="📊 Progress",
-            value=f"{bar} **{int(into)}/{int(need)}** XP to Level {level + 1}",
-            inline=False,
-        )
-        embed.set_footer(text="Send messages and hang out in voice to earn XP!")
-        return embed
-
     async def _settings_embed(self, guild):
         s = self.bot.db.get_level_settings(guild.id)
         rewards = self.bot.db.get_level_rewards(guild.id)
@@ -270,27 +238,33 @@ class LevelingCog(commands.Cog):
         )
         return embed
 
-    @discord.app_commands.command(name="rank", description="View your level, XP and rank in this server")
+    @discord.app_commands.command(name="level", description="View your level, XP and rank in this server as an image")
     @discord.app_commands.describe(member="The member to view (defaults to you)")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
-    async def rank(self, interaction: discord.Interaction, member: discord.Member = None):
+    async def level(self, interaction: discord.Interaction, member: discord.Member = None):
         await interaction.response.defer()
         if not interaction.guild:
-            await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+            await interaction.followup.send("This command can only be used in a server!", ephemeral=True)
             return
         target = member or interaction.user
-        await interaction.followup.send(embed=self._rank_embed(target, interaction.guild))
+        rec = self.bot.db.get_leveling(interaction.guild.id, target.id)
+        if rec is None:
+            level, into, need = 1, 0, self.xp_for_level(1)
+            xp, messages = 0, 0
+        else:
+            xp = rec["xp"]
+            messages = rec["total_messages"]
+            level, into, need = self.level_progress(xp)
 
-    @lvl_group.command(name="rank", description="View your level, XP and rank in this server")
-    @discord.app_commands.describe(member="The member to view (defaults to you)")
-    async def leveling_rank(self, interaction: discord.Interaction, member: discord.Member = None):
-        await interaction.response.defer()
-        if not interaction.guild:
-            await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
-            return
-        target = member or interaction.user
-        await interaction.followup.send(embed=self._rank_embed(target, interaction.guild))
+        rank, total = self.bot.db.get_leveling_rank(interaction.guild.id, target.id)
+        avatar = await self._avatar_pil(target)
+        buf = render_level_card(
+            target.display_name, interaction.guild.name, avatar,
+            level, rank, total, into, need, xp, messages,
+        )
+        file = discord.File(buf, filename="level.png")
+        await interaction.followup.send(file=file)
 
     @lvl_group.command(name="top", description="View the server level leaderboard")
     async def leveling_top(self, interaction: discord.Interaction):

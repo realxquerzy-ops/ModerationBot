@@ -51,10 +51,83 @@ def _round_rect_pill(draw, x0, y0, x1, y1, radius, fill, outline=None):
 
 def _avatar_image(img):
     size = 84
-    im = img.convert("RGB").resize((size, size), Image.LANCZOS)
+    im = img.convert("RGB")
+    w, h = im.size
+    side = min(w, h)
+    left = (w - side) // 2
+    top = (h - side) // 2
+    im = im.crop((left, top, left + side, top + side)).resize((size, size), Image.LANCZOS)
     mask = Image.new("L", (size, size), 0)
     ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
     return im, mask
+
+
+def _avatar_circle(img, size):
+    im = img.convert("RGB")
+    w, h = im.size
+    side = min(w, h)
+    left = (w - side) // 2
+    top = (h - side) // 2
+    im = im.crop((left, top, left + side, top + side)).resize((size, size), Image.LANCZOS)
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
+    return im, mask
+
+
+def render_level_card(display_name, guild_name, av_img, level, rank, total, into, need, xp, messages):
+    width = 880
+    height = 470
+    img = Image.new("RGB", (width, height), _BG)
+    draw = ImageDraw.Draw(img)
+
+    _round_rect_pill(draw, 24, 24, width - 24, height - 24, 24, _ROW_BG)
+    _round_rect_pill(draw, 24, 24, width - 24, 150, 24, _HEADER_BG)
+
+    draw.text((64, 40), "Level Card", font=_font(36, True), fill=_ACCENT)
+    draw.text((64, 98), str(guild_name), font=_font(20), fill=_MUTED)
+
+    avatar_size = 150
+    if av_img is not None:
+        av, mask = _avatar_circle(av_img, avatar_size)
+        img.paste(av, (64, 180), mask)
+    else:
+        draw.ellipse((64, 180, 64 + avatar_size, 180 + avatar_size), outline=(88, 101, 242), width=6)
+
+    name_font = _font(40, True)
+    name = _fit_name(draw, display_name, name_font, 550)
+    draw.text((280, 182), name, font=name_font, fill=_NAME)
+
+    draw.text((280, 248), "RANK", font=_font(17), fill=_MUTED)
+    draw.text((280, 272), f"#{rank} / {total}", font=_font(27, True), fill=_ACCENT)
+
+    level_str = f"LEVEL {level}"
+    badge_font = _font(24, True)
+    badge_w = draw.textlength(level_str, font=badge_font)
+    badge_x, badge_y, badge_h = 280, 326, 44
+    _round_rect_pill(draw, badge_x, badge_y, badge_x + badge_w + 36, badge_y + badge_h, 12, _ACCENT)
+    draw.text((badge_x + 18, badge_y + 8), level_str, font=badge_font, fill=(250, 251, 253))
+
+    stat_x = badge_x + badge_w + 36 + 24
+    draw.text((stat_x, 336), f"{int(xp):,} XP", font=_font(19, True), fill=_NAME)
+    draw.text((stat_x, 366), f"{messages} messages", font=_font(17), fill=_MUTED)
+
+    bar_x0, bar_x1 = 280, width - 120
+    bar_w = bar_x1 - bar_x0
+    bar_top = 398
+    bar_h = 16
+    _round_rect_pill(draw, bar_x0, bar_top, bar_x1, bar_top + bar_h, 8, _BAR_BG)
+    pct = max(0.0, min(1.0, (into / need) if need > 0 else 0.0))
+    fill_w = int(bar_w * pct)
+    if fill_w > 0:
+        _round_rect_pill(draw, bar_x0, bar_top, bar_x0 + fill_w, bar_top + bar_h, 8, _ACCENT)
+
+    next_str = f"{into:,}/{need:,} XP to level {level + 1}" if need > 0 else f"Level {level + 1}"
+    draw.text((bar_x0, bar_top + bar_h + 8), next_str, font=_font(16), fill=_MUTED)
+
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    buf.seek(0)
+    return buf
 
 
 def render_leaderboard(entries):
@@ -78,7 +151,7 @@ def render_leaderboard(entries):
 
     for i, (name_part, av_img, level, into, need, xp) in enumerate(entries):
         y = top + i * row_h
-        _round_rect_pill(draw, 40, y, width - 40, y + row_h - 12, 16, _ROW_BG)
+        _round_rect_pill(draw, 40, y, width - 40, y + row_h, 16, _ROW_BG)
 
         medal = None
         num_color = _MUTED
@@ -89,7 +162,6 @@ def render_leaderboard(entries):
         elif i == 2:
             medal = _BRONZE
 
-        # rank badge
         bbox = (40 + 24, y + 30, 40 + 24 + 36, y + 30 + 36)
         if medal:
             draw.ellipse(bbox, fill=medal)
@@ -98,34 +170,30 @@ def render_leaderboard(entries):
             draw.rounded_rectangle(bbox, radius=18, fill=(40, 44, 48))
             draw.text((bbox[0] + 9, bbox[1] + 4), str(i + 1), font=_font(20, True), fill=num_color)
 
-        # avatar
         if av_img is not None:
             av, _ = _avatar_image(av_img)
-            img.paste(av, (40 + 24 + 52, y + 10), rgba_mask_84())
+            img.paste(av, (40 + 24 + 52, y + 6), rgba_mask_84())
 
         name_x = 40 + 24 + 52 + 96
         name_font = _font(30, True)
         name = _fit_name(draw, name_part, name_font, right_edge - name_x - 260)
-        draw.text((name_x, y + 14), name, font=name_font, fill=_NAME)
+        draw.text((name_x, y + 12), name, font=name_font, fill=_NAME)
 
-        # level + progress
         level_tag = f"LEVEL {level}"
         tag_font = _font(24, True)
         tag_w = draw.textlength(level_tag, font=tag_font)
         tag_x = right_edge - tag_w
-        draw.text((tag_x, y + 16), level_tag, font=tag_font, fill=_ACCENT)
+        draw.text((tag_x, y + 14), level_tag, font=tag_font, fill=_ACCENT)
 
-        # xp text
         xp_font = _font(19)
         xp_str = f"{xp:,} XP" if xp >= 0 else "0 XP"
         xp_w = draw.textlength(xp_str, font=xp_font)
-        draw.text((right_edge - xp_w, y + 54), xp_str, font=xp_font, fill=_MUTED)
+        draw.text((right_edge - xp_w, y + 50), xp_str, font=xp_font, fill=_MUTED)
 
-        # progress bar
         bar_x0 = name_x
         bar_x1 = right_edge - 260
         bar_w = max(40, bar_x1 - bar_x0)
-        bar_top = y + 60
+        bar_top = y + 58
         bar_h = 14
         _round_rect_pill(draw, bar_x0, bar_top, bar_x0 + bar_w, bar_top + bar_h, 7, _BAR_BG)
 
