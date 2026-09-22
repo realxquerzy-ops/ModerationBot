@@ -18,28 +18,54 @@ class ReactionRoleCog(commands.Cog):
         return bool(interaction.user.guild_permissions.manage_guild)
 
     def _emoji_token(self, raw: str) -> str:
-        m = self._CUSTOM_RE.match(raw.strip())
+        s = raw.strip()
+        m = self._CUSTOM_RE.match(s)
         if m:
             anim = "a" if m.group("anim") else ""
             return f"custom:{m.group('id')}:{m.group('name')}:{anim}"
-        return raw.strip()
+        if re.fullmatch(r":[^:\s>]+:", s):
+            try:
+                import emoji
+
+                resolved = emoji.emojize(s)
+                if resolved != s:
+                    return resolved
+            except Exception:
+                pass
+        return s
 
     def _partial_emoji(self, token: str):
         if token.startswith("custom:"):
             _, eid, name, anim = token.split(":", 3)
             return discord.PartialEmoji(name=name, id=int(eid), animated=(anim == "a"))
+        if re.fullmatch(r":[^:\s>]+:", token):
+            try:
+                import emoji
+
+                resolved = emoji.emojize(token)
+                if resolved != token:
+                    return resolved
+            except Exception:
+                pass
         return token
 
-    def _custom_id(self, token: str):
-        if token.startswith("custom:"):
-            return int(token.split(":", 3)[1])
-        return None
-
-    def _matches(self, token: str, emoji) -> bool:
+    @staticmethod
+    def _matches(token: str, emoji) -> bool:
         did = getattr(emoji, "id", None)
         if did is not None:
-            return self._custom_id(token) == did
-        return not token.startswith("custom:") and str(emoji) == token
+            if not token.startswith("custom:"):
+                return False
+            return int(token.split(":", 3)[1]) == did
+        if token.startswith("custom:"):
+            return False
+        if re.fullmatch(r":[^:\s>]+:", token):
+            try:
+                import emoji as _emoji
+
+                token = _emoji.emojize(token)
+            except Exception:
+                pass
+        return str(emoji) == token
 
     async def _sync_reactions(self, channel, msg, bindings):
         for b in bindings:

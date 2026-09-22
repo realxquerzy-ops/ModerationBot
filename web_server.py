@@ -57,6 +57,15 @@ def _emoji_token(raw: str, guild=None):
         found = discord.utils.get(guild.emojis, name=m2.group(1))
         if found is not None:
             return f"custom:{found.id}:{found.name}:{'a' if found.animated else ''}"
+    if re.fullmatch(r":[^:\s>]+:", s):
+        try:
+            import emoji
+
+            resolved = emoji.emojize(s)
+            if resolved != s:
+                return resolved
+        except Exception:
+            pass
     return s
 
 
