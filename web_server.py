@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
 import threading
 import time
@@ -10,6 +11,8 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+import discord
 
 BOT = None
 
@@ -28,6 +31,31 @@ ADMINISTRATOR = 1 << 3
 MANAGE_GUILD = 1 << 5
 
 log = logging.getLogger("web")
+
+_REACTION_RE = re.compile(r"<((?P<anim>a)?:(?P<name>[^:>]+):(?P<id>\d+))>")
+
+
+def _emoji_token(raw: str) -> str:
+    m = _REACTION_RE.match(raw.strip())
+    if m:
+        anim = "a" if m.group("anim") else ""
+        return f"custom:{m.group('id')}:{m.group('name')}:{anim}"
+    return raw.strip()
+
+
+def _partial_emoji(token: str):
+    if token.startswith("custom:"):
+        _, eid, name, anim = token.split(":", 3)
+        return discord.PartialEmoji(name=name, id=int(eid), animated=(anim == "a"))
+    return token
+
+
+def _emoji_display(token: str) -> str:
+    if token.startswith("custom:"):
+        _, eid, name, anim = token.split(":", 3)
+        anim_pre = "a" if anim == "a" else ""
+        return f"<{anim_pre}:{name}:{eid}>"
+    return token
 
 
 def _env(key, default=""):
@@ -139,6 +167,31 @@ async def _gather(bot, user, session, guild_id):
     rewards = db.get_level_rewards(gid)
     boost = db.get_boost_settings(gid) or {}
     row = db.fetchone("SELECT channel_id FROM mod_log_settings WHERE guild_id = %s", (gid,))
+
+    reaction_panels = []
+    by_msg = {}
+    for b in db.get_reaction_roles(gid):
+        by_msg.setdefault(b["message_id"], []).append(b)
+    for mid, bindings in by_msg.items():
+        chan_id = bindings[0]["channel_id"]
+        channel = guild.get_channel(chan_id)
+        role_bindings = []
+        for b in bindings:
+            role = guild.get_role(b["role_id"])
+            role_bindings.append({
+                "emoji": _emoji_display(b["emoji"]),
+                "raw_emoji": b["emoji"],
+                "role_id": str(b["role_id"]),
+                "role_name": role.name if role else "Deleted role",
+            })
+        reaction_panels.append({
+            "channel_id": str(chan_id),
+            "channel_name": channel.name if channel else "Deleted channel",
+            "message_id": str(mid),
+            "url": f"https://discord.com/channels/{gid}/{chan_id}/{mid}",
+            "bindings": role_bindings,
+        })
+
     invite = None
     if _client_id():
         invite = (
@@ -174,6 +227,7 @@ async def _gather(bot, user, session, guild_id):
                 "boost_role_id": str(boost.get("boost_role_id")) if boost.get("boost_role_id") else None,
             },
         },
+        "reaction_panels": reaction_panels,
     }
 
 
@@ -241,6 +295,105 @@ async def _apply(bot, session, guild_id, section, data):
                 )
             settings = db.get_boost_settings(gid) or {}
             bot.boost_settings[gid] = settings
+    elif section == "reactionrole":
+        action = data.get("action")
+        if action == "create":
+            return await _apply_reaction_create(bot, guild, db, data)
+        if action == "remove":
+            return await _apply_reaction_remove(guild, db, data)
+        if action == "delete":
+            return await _apply_reaction_delete(guild, db, data)
+        return {"ok": False, "error": "Unknown reaction role action."}
+    return {"ok": True}
+
+
+async def _apply_reaction_create(bot, guild, db, data):
+    channel_id = data.get("channel_id")
+    if not channel_id:
+        return {"ok": False, "error": "Pick a channel."}
+    channel = guild.get_channel(int(channel_id))
+    if channel is None or not isinstance(channel, discord.TextChannel):
+        return {"ok": False, "error": "Channel not found."}
+    title = (data.get("title") or "").strip() or "Roles"
+    description = (data.get("description") or "").strip()
+    rows = []
+    for r in data.get("rows") or []:
+        emo = (r.get("emoji") or "").strip()
+        rid = r.get("role_id")
+        if not emo or not rid:
+            continue
+        rows.append((_emoji_token(emo), int(rid)))
+    if not rows:
+        return {"ok": False, "error": "Add at least one emoji + role row."}
+    token_seen = set()
+    deduped = []
+    for token, rid in rows:
+        if token in token_seen:
+            continue
+        token_seen.add(token)
+        deduped.append((token, rid))
+    lines = []
+    for token, rid in deduped:
+        role = guild.get_role(rid)
+        lines.append(f"{_emoji_display(token)} → {role.mention}")
+    embed_desc = description or "\n".join(lines) or None
+    embed_color = discord.Color.blue()
+    try:
+        embed = discord.Embed(title=title, description=embed_desc, color=embed_color)
+        msg = await channel.send(embed=embed)
+    except Exception as e:
+        return {"ok": False, "error": f"Could not post the message: {e}"}
+    warnings = 0
+    for token, rid in deduped:
+        try:
+            await msg.add_reaction(_partial_emoji(token))
+        except Exception as e:
+            warnings += 1
+            log.warning("panel reaction add failed for %s: %s", token, e)
+        try:
+            db.set_reaction_role(guild.id, channel.id, msg.id, token, rid)
+        except Exception as e:
+            log.warning("panel reactionrole persist failed: %s", e)
+    return {
+        "ok": True,
+        "url": f"https://discord.com/channels/{guild.id}/{channel.id}/{msg.id}",
+        "warnings": warnings,
+    }
+
+
+async def _apply_reaction_remove(guild, db, data):
+    channel_id = data.get("channel_id")
+    message_id = data.get("message_id")
+    emoji_raw = data.get("emoji")
+    if not channel_id or not message_id or not emoji_raw:
+        return {"ok": False, "error": "Missing fields."}
+    token = _emoji_token(emoji_raw.strip())
+    mid = int(message_id)
+    channel = guild.get_channel(int(channel_id))
+    if channel is not None:
+        try:
+            msg = await channel.fetch_message(mid)
+            await msg.clear_reaction(_partial_emoji(token))
+        except Exception:
+            pass
+    db.delete_reaction_role(guild.id, mid, token)
+    return {"ok": True}
+
+
+async def _apply_reaction_delete(guild, db, data):
+    channel_id = data.get("channel_id")
+    message_id = data.get("message_id")
+    if not channel_id or not message_id:
+        return {"ok": False, "error": "Missing fields."}
+    mid = int(message_id)
+    channel = guild.get_channel(int(channel_id))
+    if channel is not None:
+        try:
+            msg = await channel.fetch_message(mid)
+            await msg.delete()
+        except Exception:
+            pass
+    db.delete_message_reaction_roles(guild.id, mid)
     return {"ok": True}
 
 
@@ -342,7 +495,7 @@ a{{color:#8ab4ff;text-decoration:none}}
         guild_id = payload.get("guild") or None
         section = payload.get("section")
         data = payload.get("data") or {}
-        if section not in ("mod_log", "leveling", "rewards", "boost"):
+        if section not in ("mod_log", "leveling", "rewards", "boost", "reactionrole"):
             self._json(400, {"ok": False, "error": "Unknown section"})
             return
         try:

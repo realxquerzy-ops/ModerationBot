@@ -272,6 +272,18 @@ class Database:
         )
         return [{"emoji": e, "role_id": int(r)} for e, r in rows]
 
+    def delete_reaction_role(self, guild_id, message_id, emoji):
+        self.execute(
+            "DELETE FROM reaction_roles WHERE guild_id = %s AND message_id = %s AND emoji = %s",
+            (guild_id, message_id, emoji),
+        )
+
+    def delete_message_reaction_roles(self, guild_id, message_id):
+        self.execute(
+            "DELETE FROM reaction_roles WHERE guild_id = %s AND message_id = %s",
+            (guild_id, message_id),
+        )
+
     def get_leveling(self, guild_id, user_id):
         row = self.fetchone(
             "SELECT xp, level, total_messages, voice_minutes, commands_used, last_gain FROM leveling WHERE guild_id = %s AND user_id = %s",

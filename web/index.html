@@ -26,10 +26,20 @@
   .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
   .row label { flex: 0 0 170px; font-size: 13px; color: #b9bac9; }
   .row label.wide { flex: 0 0 340px; }
-  select, input[type=text], input[type=number] { background: #16171f; color: #e8e8f0; border: 1px solid #3a3d52;
-    border-radius: 8px; padding: 8px 10px; font-size: 14px; min-width: 220px; }
-  input[type=text] { flex: 1; min-width: 280px; }
+  select, input[type=text], input[type=number], textarea { background: #16171f; color: #e8e8f0; border: 1px solid #3a3d52;
+    border-radius: 8px; padding: 8px 10px; font-size: 14px; min-width: 220px; font-family: inherit; }
+  input[type=text], textarea { flex: 1; min-width: 280px; }
+  textarea { resize: vertical; }
   input[type=number] { min-width: 110px; width: 110px; }
+  .btn.mini { padding: 3px 9px; font-size: 12px; }
+  .rr-row { display: flex; gap: 8px; margin: 8px 0; align-items: center; flex-wrap: wrap; }
+  .rr-row input[type=text] { flex: 0 1 240px; min-width: 200px; }
+  .panel-item { border: 1px solid #33364a; border-radius: 10px; padding: 10px 12px; margin: 10px 0; }
+  .panel-head { display: flex; align-items: center; gap: 10px; }
+  .panel-head a { color: #8ab4ff; text-decoration: none; font-size: 14px; }
+  .panel-head .spacer { flex: 1; }
+  .binding { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 14px; }
+  .binding .emo { min-width: 26px; text-align: center; }
   .actions { margin-top: 14px; display: flex; gap: 8px; }
   .status { margin-top: 10px; font-size: 13px; min-height: 18px; }
   .status.ok { color: #7bd88f; }
@@ -111,6 +121,20 @@
         <button class="btn danger" data-clear="boost">Clear boost settings</button>
       </div>
       <div class="status" id="st_boost"></div>
+    <div class="card">
+      <h2>Reaction Roles</h2>
+      <p class="hint">Post an embed with reactions that grant roles. You can create as many panels as you want.</p>
+      <div class="row"><label>Channel</label><select id="rr_channel"></select></div>
+      <div class="row"><label>Title</label><input type="text" id="rr_title" placeholder="Pick your roles"></div>
+      <div class="row" style="align-items:flex-start"><label>Description</label><textarea id="rr_desc" rows="3" placeholder="Leave blank to auto-list the emoji → role rows"></textarea></div>
+      <div id="rr_rows"></div>
+      <div class="actions">
+        <button class="btn" id="rr_addRow">Add row</button>
+        <button class="btn primary" id="rr_create">Post panel</button>
+      </div>
+      <div class="status" id="st_reaction"></div>
+      <h3 style="margin:18px 0 6px;font-size:15px">Existing panels</h3>
+      <div id="rr_panels"></div>
     </div>
   </div>
 </div>
@@ -188,6 +212,76 @@ function render() {
 
   fillSelect($("bo_channel"), textChannels(), s.boost.channel_id, "None");
   fillSelect($("bo_role"), state.roles, s.boost.boost_role_id, "None");
+
+  fillSelect($("rr_channel"), textChannels(), "");
+  if (!$("rr_rows").children.length) addRrRow();
+  renderPanels();
+}
+
+function addRrRow(emojiVal, roleVal) {
+  const wrap = document.createElement("div");
+  wrap.className = "rr-row";
+  const emo = document.createElement("input");
+  emo.type = "text";
+  emo.placeholder = "emoji or <:name:id>";
+  emo.value = emojiVal || "";
+  const sel = document.createElement("select");
+  fillSelect(sel, state.roles, roleVal || "", "None");
+  const rm = document.createElement("button");
+  rm.className = "btn mini";
+  rm.textContent = "X";
+  rm.addEventListener("click", () => wrap.remove());
+  wrap.append(emo, sel, rm);
+  $("rr_rows").appendChild(wrap);
+}
+
+function renderPanels() {
+  const lists = $("rr_panels");
+  lists.innerHTML = "";
+  if (!state.reaction_panels || !state.reaction_panels.length) {
+    lists.textContent = "No reaction role panels yet.";
+    return;
+  }
+  for (const p of state.reaction_panels) {
+    const item = document.createElement("div");
+    item.className = "panel-item";
+    const head = document.createElement("div");
+    head.className = "panel-head";
+    let label = "#" + p.channel_name;
+    if (label === "#undefined") label = "channel";
+    const a = document.createElement("a");
+    a.href = p.url;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = label + " · message " + p.message_id;
+    const sp = document.createElement("span");
+    sp.className = "spacer";
+    const del = document.createElement("button");
+    del.className = "btn mini danger";
+    del.textContent = "Delete";
+    del.addEventListener("click", () => deletePanel(p));
+    head.append(a, sp, del);
+    item.appendChild(head);
+    for (const b of p.bindings) {
+      const row = document.createElement("div");
+      row.className = "binding";
+      const emo = document.createElement("span");
+      emo.className = "emo";
+      emo.textContent = b.emoji;
+      const nm = document.createElement("span");
+      nm.textContent = b.role_name;
+      const sp2 = document.createElement("span");
+      sp2.className = "spacer";
+      const x = document.createElement("button");
+      x.className = "btn mini";
+      x.textContent = "X";
+      x.title = "Remove this emoji/role binding";
+      x.addEventListener("click", () => removeBinding(p, b));
+      row.append(emo, nm, sp2, x);
+      item.appendChild(row);
+    }
+    lists.appendChild(item);
+  }
 }
 
 async function load(guildId) {
@@ -274,6 +368,74 @@ $("serverSel").addEventListener("change", () => {
     else { $("panel").style.display = "none"; $("login").style.display = ""; }
   });
 });
+
+$("rr_addRow").addEventListener("click", () => addRrRow());
+
+$("rr_create").addEventListener("click", async () => {
+  const rows = [];
+  document.querySelectorAll("#rr_rows .rr-row").forEach(r => {
+    const emo = r.querySelector("input[type=text]").value.trim();
+    const role = r.querySelector("select").value;
+    if (emo && role) rows.push({ emoji: emo, role_id: role });
+  });
+  setStatus("st_reaction", "Posting…", true);
+  try {
+    const res = await api("/api/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        section: "reactionrole",
+        data: {
+          action: "create",
+          channel_id: $("rr_channel").value,
+          title: $("rr_title").value,
+          description: $("rr_desc").value,
+          rows,
+        },
+        guild: state.guild.id,
+      }),
+    });
+    await load(state.guild.id);
+    const extra = res.warnings ? ` But ${res.warnings} emoji could not be added (double-check emoji names).` : "";
+    setStatus("st_reaction", "Panel posted: " + res.url + extra, true);
+  } catch (e) { setStatus("st_reaction", "Error: " + e.message, false); }
+});
+
+async function deletePanel(p) {
+  if (!confirm("Delete this panel message and all its bindings?")) return;
+  setStatus("st_reaction", "Deleting…", true);
+  try {
+    await api("/api/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        section: "reactionrole",
+        data: { action: "delete", channel_id: p.channel_id, message_id: p.message_id },
+        guild: state.guild.id,
+      }),
+    });
+    await load(state.guild.id);
+    setStatus("st_reaction", "Panel deleted.", true);
+  } catch (e) { setStatus("st_reaction", "Error: " + e.message, false); }
+}
+
+async function removeBinding(p, b) {
+  if (!confirm("Remove the " + b.emoji + " binding from this panel?")) return;
+  setStatus("st_reaction", "Removing…", true);
+  try {
+    await api("/api/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        section: "reactionrole",
+        data: { action: "remove", channel_id: p.channel_id, message_id: p.message_id, emoji: b.raw_emoji },
+        guild: state.guild.id,
+      }),
+    });
+    await load(state.guild.id);
+    setStatus("st_reaction", "Binding removed.", true);
+  } catch (e) { setStatus("st_reaction", "Error: " + e.message, false); }
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   load().catch(e => { if (e.message === "not_authed") showLogin(); });
