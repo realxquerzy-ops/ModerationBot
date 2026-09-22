@@ -105,9 +105,12 @@
 
     <div class="card">
       <h2>Level Reward Roles</h2>
-      <p class="hint">Roles assigned automatically when a member reaches each level.</p>
+      <p class="hint">Roles assigned automatically when a member reaches each level. Add any level you want.</p>
       <div id="rewards"></div>
-      <div class="actions"><button class="btn primary" data-save="rewards">Save roles</button></div>
+      <div class="actions">
+        <button class="btn" id="rl_add">Add level</button>
+        <button class="btn primary" data-save="rewards">Save roles</button>
+      </div>
       <div class="status" id="st_rewards"></div>
     </div>
 
@@ -142,6 +145,8 @@
 <script>
 const REWARD_LEVELS = [5, 10, 25, 35, 50, 75, 100];
 let state = null;
+let rewardDirty = false;
+let lastGuildId = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -155,6 +160,73 @@ async function api(path, opts = {}) {
 
 function textChannels() {
   return (state.channels || []).filter(c => c.type === "text");
+}
+
+function buildRewardRows() {
+  const el = $("rewards");
+  el.innerHTML = "";
+  const saved = state.settings.rewards || {};
+  const levels = Object.keys(saved).map(Number).filter(n => n > 0).sort((a, b) => a - b);
+  for (const lvl of levels) {
+    const row = document.createElement("div");
+    row.className = "level-row";
+    const lbl = document.createElement("span");
+    lbl.className = "lvl";
+    lbl.textContent = "Level " + lvl;
+    const sel = document.createElement("select");
+    fillSelect(sel, state.roles, saved[String(lvl)] || "", "None");
+    const rm = document.createElement("button");
+    rm.className = "btn mini";
+    rm.textContent = "X";
+    rm.title = "Remove this level reward";
+    rm.addEventListener("click", () => removeRewardRow(row));
+    row.dataset.level = lvl;
+    row.append(lbl, sel, rm);
+    el.appendChild(row);
+  }
+  if (!levels.length) {
+    const d = document.createElement("div");
+    d.id = "rewardsEmpty";
+    d.className = "muted";
+    d.textContent = "No reward roles set yet. Add a level below.";
+    el.appendChild(d);
+  }
+}
+
+function addRewardLevelRow() {
+  const el = $("rewards");
+  const empty = el.querySelector("#rewardsEmpty");
+  if (empty) empty.remove();
+  const row = document.createElement("div");
+  row.className = "level-row";
+  const inp = document.createElement("input");
+  inp.type = "number";
+  inp.min = "1";
+  inp.max = "9999";
+  inp.placeholder = "Level";
+  inp.className = "lvlInput";
+  const sel = document.createElement("select");
+  fillSelect(sel, state.roles, "", "None");
+  const rm = document.createElement("button");
+  rm.className = "btn mini";
+  rm.textContent = "X";
+  rm.addEventListener("click", () => removeRewardRow(row));
+  row.append(inp, sel, rm);
+  el.appendChild(row);
+  rewardDirty = true;
+  inp.focus();
+}
+
+function removeRewardRow(row) {
+  row.remove();
+  rewardDirty = true;
+  if (!$("rewards").children.length) {
+    const d = document.createElement("div");
+    d.id = "rewardsEmpty";
+    d.className = "muted";
+    d.textContent = "No reward roles set yet. Add a level below.";
+    $("rewards").appendChild(d);
+  }
 }
 
 function fillSelect(el, items, selected, placeholder) {
@@ -196,19 +268,12 @@ function render() {
   $("lv_text").value = s.leveling.levelup_text || "";
 
   const rewards = $("rewards");
-  rewards.innerHTML = "";
-  for (const lvl of REWARD_LEVELS) {
-    const row = document.createElement("div");
-    row.className = "level-row";
-    const lbl = document.createElement("span");
-    lbl.className = "lvl";
-    lbl.textContent = "Level " + lvl;
-    const sel = document.createElement("select");
-    sel.dataset.level = lvl;
-    fillSelect(sel, state.roles, s.rewards[String(lvl)] || "", "None");
-    row.appendChild(lbl); row.appendChild(sel);
-    rewards.appendChild(row);
+  if (lastGuildId !== state.guild.id) {
+    lastGuildId = state.guild.id;
+    rewardDirty = false;
+    rewards.innerHTML = "";
   }
+  if (!rewardDirty && !rewards.children.length) buildRewardRows();
 
   fillSelect($("bo_channel"), textChannels(), s.boost.channel_id, "None");
   fillSelect($("bo_role"), state.roles, s.boost.boost_role_id, "None");
@@ -319,8 +384,11 @@ async function save(section) {
     data.first_place_role = $("lv_firstPlace").value;
   } else if (section === "rewards") {
     const roles = {};
-    document.querySelectorAll("#rewards select").forEach(sel => {
-      if (sel.value) roles[sel.dataset.level] = sel.value;
+    document.querySelectorAll("#rewards .level-row").forEach(row => {
+      const sel = row.querySelector("select");
+      const inp = row.querySelector(".lvlInput");
+      const level = inp ? parseInt(inp.value, 10) : parseInt(row.dataset.level, 10);
+      if (level > 0 && sel && sel.value) roles[String(level)] = sel.value;
     });
     data.roles = roles;
   } else if (section === "boost") {
@@ -332,6 +400,10 @@ async function save(section) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ section, data, guild: state.guild.id }),
   });
+  if (section === "rewards") {
+    rewardDirty = false;
+    $("rewards").innerHTML = "";
+  }
   await load(state.guild.id);
   setStatus("st_" + section, "Saved ✓", true);
   return res;
@@ -370,6 +442,8 @@ $("serverSel").addEventListener("change", () => {
 });
 
 $("rr_addRow").addEventListener("click", () => addRrRow());
+
+$("rl_add").addEventListener("click", () => addRewardLevelRow());
 
 $("rr_create").addEventListener("click", async () => {
   const rows = [];
