@@ -12,7 +12,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 BOT = None
-TARGET_GUILD_ID = None
 
 SESSIONS = {}
 SESSION_TTL = 7 * 24 * 3600
@@ -85,10 +84,20 @@ def _oauth_exchange(code):
         return json.load(resp)
 
 
-def _new_session(user):
+def _extract_manageable(guilds):
+    result = {}
+    for g in guilds:
+        perms = int(g.get("permissions") or 0)
+        if perms & ADMINISTRATOR or perms & MANAGE_GUILD:
+            result[str(g.get("id"))] = g.get("name") or "Server"
+    return result
+
+
+def _new_session(user, manageable):
     token = secrets.token_urlsafe(24)
     SESSIONS[token] = {
         "user": user,
+        "manageable": manageable,
         "exp": time.time() + SESSION_TTL,
     }
     return token
@@ -98,30 +107,24 @@ def _cookie(token):
     return f"mb_session={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={SESSION_TTL}"
 
 
-def _verify_user(guilds):
-    if not TARGET_GUILD_ID:
-        return False, "The bot hasn't synced its server yet. Try again in a few seconds."
-    target = str(TARGET_GUILD_ID)
-    for g in guilds:
-        if g.get("id") == target:
-            perms = int(g.get("permissions") or 0)
-            if perms & ADMINISTRATOR or perms & MANAGE_GUILD:
-                return True, "ok"
-            return False, "You're in the server but need **Manage Server** permission to use this panel."
-    return False, "You're not a member of the bot's server."
+def _available_guilds(bot, session):
+    allowed = session.get("manageable") or {}
+    guilds = [g for g in bot.guilds if str(g.id) in allowed]
+    guilds.sort(key=lambda g: g.name.lower())
+    return guilds
 
 
-def _target_guild(bot):
-    for guild in bot.guilds:
-        if TARGET_GUILD_ID and guild.id == TARGET_GUILD_ID:
-            return guild
-    return bot.guilds[0] if bot.guilds else None
+def _pick_guild(bot, session, guild_id):
+    for g in _available_guilds(bot, session):
+        if guild_id is None or str(g.id) == str(guild_id):
+            return g
+    return None
 
 
-async def _gather(bot, user):
-    guild = _target_guild(bot)
+async def _gather(bot, user, session, guild_id):
+    guild = _pick_guild(bot, session, guild_id)
     if guild is None:
-        return {"ok": False, "error": "The bot isn't in any server yet."}
+        return {"ok": False, "error": "No server is available. Make sure the bot is in the server and you have Manage Server."}
     db = bot.db
     gid = guild.id
     channels = [
@@ -148,6 +151,7 @@ async def _gather(bot, user):
         )
     return {
         "ok": True,
+        "guilds": [{"id": str(g.id), "name": g.name} for g in _available_guilds(bot, session)],
         "guild": {"id": str(gid), "name": guild.name},
         "user": {"id": user.get("id"), "username": user.get("username")},
         "invite_url": invite,
@@ -173,10 +177,10 @@ async def _gather(bot, user):
     }
 
 
-async def _apply(bot, section, data):
-    guild = _target_guild(bot)
+async def _apply(bot, session, guild_id, section, data):
+    guild = _pick_guild(bot, session, guild_id)
     if guild is None:
-        return {"ok": False, "error": "The bot isn't in any server yet."}
+        return {"ok": False, "error": "No server is available. Make sure the bot is in the server and you have Manage Server."}
     db = bot.db
     gid = guild.id
 
@@ -184,8 +188,10 @@ async def _apply(bot, section, data):
         cid = data.get("channel_id")
         if cid:
             db.set_log_channel(gid, int(cid))
+            bot.log_channels[gid] = int(cid)
         else:
             db.clear_log_channel(gid)
+            bot.log_channels.pop(gid, None)
     elif section == "leveling":
         kwargs = {}
         if "enabled" in data:
@@ -215,16 +221,26 @@ async def _apply(bot, section, data):
     elif section == "boost":
         if data.get("clear"):
             db.clear_boost_settings(gid)
+            bot.boost_settings.pop(gid, None)
         else:
             cid = data.get("channel_id")
             rid = data.get("boost_role_id")
             if cid is None and rid is None:
                 return {"ok": False, "error": "Nothing to save."}
-            db.set_boost_settings(
-                gid,
-                channel_id=int(cid) if cid else None,
-                role_id=int(rid) if rid else None,
-            )
+            channel = int(cid) if cid else None
+            role = int(rid) if rid else None
+            if db.get_boost_settings(gid) is None:
+                db.execute(
+                    "INSERT INTO boost_settings (guild_id, channel_id, boost_role_id) VALUES (%s, %s, %s)",
+                    (gid, channel, role),
+                )
+            else:
+                db.execute(
+                    "UPDATE boost_settings SET channel_id = %s, boost_role_id = %s WHERE guild_id = %s",
+                    (channel, role, gid),
+                )
+            settings = db.get_boost_settings(gid) or {}
+            bot.boost_settings[gid] = settings
     return {"ok": True}
 
 
@@ -301,7 +317,7 @@ a{{color:#8ab4ff;text-decoration:none}}
         elif path == "/auth/logout":
             self._handle_logout()
         elif path == "/api/bootstrap":
-            self._handle_bootstrap()
+            self._handle_bootstrap(parsed.query)
         else:
             self._json(404, {"ok": False, "error": "Not found"})
 
@@ -323,13 +339,17 @@ a{{color:#8ab4ff;text-decoration:none}}
         except Exception as e:
             self._json(400, {"ok": False, "error": f"Bad request: {e}"})
             return
+        guild_id = payload.get("guild") or None
         section = payload.get("section")
         data = payload.get("data") or {}
         if section not in ("mod_log", "leveling", "rewards", "boost"):
             self._json(400, {"ok": False, "error": "Unknown section"})
             return
         try:
-            result = _run_on_loop(_apply(BOT, section, data))
+            result = _run_on_loop(_apply(BOT, session, guild_id, section, data))
+            if result.get("ok") is False:
+                self._json(400, result)
+                return
             self._json(200, result)
         except Exception as e:
             traceback.print_exc()
@@ -386,11 +406,14 @@ a{{color:#8ab4ff;text-decoration:none}}
             traceback.print_exc()
             self._error_page(f"Could not reach Discord: {e}")
             return
-        ok, reason = _verify_user(guilds)
-        if not ok:
-            self._error_page(reason)
+        manageable = _extract_manageable(guilds)
+        if not manageable:
+            self._error_page("You don't have <strong>Manage Server</strong> permission in any server the bot is in.")
             return
-        session = _new_session({"id": me.get("id"), "username": me.get("username")})
+        session = _new_session(
+            {"id": me.get("id"), "username": me.get("username")},
+            manageable,
+        )
         self._redirect("/", {"Set-Cookie": _cookie(session)})
 
     def _handle_logout(self):
@@ -401,7 +424,7 @@ a{{color:#8ab4ff;text-decoration:none}}
                 SESSIONS.pop(value, None)
         self._redirect("/", {"Set-Cookie": "mb_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"})
 
-    def _handle_bootstrap(self):
+    def _handle_bootstrap(self, query):
         session = self._session()
         if not session:
             self._json(401, {"ok": False, "error": "not_authed"})
@@ -409,8 +432,10 @@ a{{color:#8ab4ff;text-decoration:none}}
         if BOT is None or BOT.db is None:
             self._json(503, {"ok": False, "error": "Bot is still starting up. Try again in a few seconds."})
             return
+        params = {k: v[0] for k, v in urllib.parse.parse_qs(query).items()}
+        guild_id = params.get("guild") or None
         try:
-            payload = _run_on_loop(_gather(BOT, session["user"]))
+            payload = _run_on_loop(_gather(BOT, session["user"], session, guild_id))
             if payload.get("ok") is False:
                 self._json(409, payload)
                 return

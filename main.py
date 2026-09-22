@@ -59,7 +59,6 @@ async def on_tree_error(interaction: discord.Interaction, error: Exception):
 async def on_ready():
     logging.info("Logged in as %s. Guilds: %s", bot.user, [g.name for g in bot.guilds])
     bot._api_loop = asyncio.get_running_loop()
-    web_server.TARGET_GUILD_ID = bot.guilds[0].id if bot.guilds else None
     try:
         await bot.tree.sync()
         for guild in bot.guilds:

@@ -60,7 +60,8 @@
 
   <div id="panel" style="display:none">
     <header>
-      <h1>⚙️ <span id="serverName"></span> Setup</h1>
+      <h1>⚙️ Setup</h1>
+      <select id="serverSel"></select>
       <span class="muted" id="whoami"></span>
       <span class="spacer"></span>
       <a class="btn" id="inviteBtn" target="_blank" rel="noopener">Invite Bot</a>
@@ -151,8 +152,11 @@ function fillSelect(el, items, selected, placeholder) {
 
 function render() {
   const s = state.settings;
-  $("serverName").textContent = state.guild.name;
-  $("whoami").textContent = "Signed in as " + (state.user.username || "you");
+  fillSelect($("serverSel"), state.guilds, state.guild.id);
+  const who = $("whoami");
+  who.textContent = state.guilds.length > 1
+    ? `Signed in as ${state.user.username || "you"} · ${state.guilds.length} servers`
+    : "Signed in as " + (state.user.username || "you");
   const inv = $("inviteBtn");
   if (state.invite_url) { inv.href = state.invite_url; inv.style.display = ""; }
   else { inv.style.display = "none"; }
@@ -186,8 +190,8 @@ function render() {
   fillSelect($("bo_role"), state.roles, s.boost.boost_role_id, "None");
 }
 
-async function load() {
-  state = await api("/api/bootstrap");
+async function load(guildId) {
+  state = await api("/api/bootstrap" + (guildId ? "?guild=" + encodeURIComponent(guildId) : ""));
   $("loading").style.display = "none";
   $("login").style.display = "none";
   $("panel").style.display = "";
@@ -232,9 +236,9 @@ async function save(section) {
   const res = await api("/api/apply", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ section, data }),
+    body: JSON.stringify({ section, data, guild: state.guild.id }),
   });
-  await load();
+  await load(state.guild.id);
   setStatus("st_" + section, "Saved ✓", true);
   return res;
 }
@@ -256,11 +260,18 @@ document.querySelectorAll("[data-clear]").forEach(btn => {
       await api("/api/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ section, data: { clear: true } }),
+        body: JSON.stringify({ section, data: { clear: true }, guild: state.guild.id }),
       });
-      await load();
+      await load(state.guild.id);
       setStatus("st_" + section, "Cleared ✓", true);
     } catch (e) { setStatus("st_" + section, "Error: " + e.message, false); }
+  });
+});
+
+$("serverSel").addEventListener("change", () => {
+  load($("serverSel").value).catch(e => {
+    if (e.message === "not_authed") showLogin();
+    else { $("panel").style.display = "none"; $("login").style.display = ""; }
   });
 });
 
