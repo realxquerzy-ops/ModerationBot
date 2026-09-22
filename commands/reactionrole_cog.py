@@ -191,55 +191,57 @@ class ReactionRoleCog(commands.Cog):
         )
 
     @commands.Cog.listener()
-    async def on_reaction_add(self, reaction, user):
-        if user.bot:
+    async def on_raw_reaction_add(self, payload):
+        if payload.user_id == self.bot.user.id:
             return
-        if reaction.message is None or reaction.message.guild is None:
+        if payload.guild_id is None:
             return
-        guild = reaction.message.guild
-        if self.bot.db is None:
+        guild = self.bot.get_guild(payload.guild_id)
+        if guild is None or self.bot.db is None:
             return
         try:
             bindings = self.bot.db.get_message_reaction_roles(
-                guild.id, reaction.message.channel.id, reaction.message.id
+                guild.id, payload.channel_id, payload.message_id
             )
         except Exception:
             return
         for b in bindings:
-            if not self._matches(b["emoji"], reaction.emoji):
+            if not self._matches(b["emoji"], payload.emoji):
                 continue
             role = guild.get_role(b["role_id"])
-            if role is not None and role not in user.roles:
+            member = guild.get_member(payload.user_id)
+            if role is not None and member is not None and role not in member.roles:
                 try:
-                    await user.add_roles(role)
+                    await member.add_roles(role, reason="Reaction role")
                 except Exception as e:
-                    self.log.warning("reaction role add failed for %s: %s", user.id, e)
+                    self.log.warning("reaction role add failed for %s: %s", payload.user_id, e)
             break
 
     @commands.Cog.listener()
-    async def on_reaction_remove(self, reaction, user):
-        if user.bot:
+    async def on_raw_reaction_remove(self, payload):
+        if payload.user_id == self.bot.user.id:
             return
-        if reaction.message is None or reaction.message.guild is None:
+        if payload.guild_id is None:
             return
-        guild = reaction.message.guild
-        if self.bot.db is None:
+        guild = self.bot.get_guild(payload.guild_id)
+        if guild is None or self.bot.db is None:
             return
         try:
             bindings = self.bot.db.get_message_reaction_roles(
-                guild.id, reaction.message.channel.id, reaction.message.id
+                guild.id, payload.channel_id, payload.message_id
             )
         except Exception:
             return
         for b in bindings:
-            if not self._matches(b["emoji"], reaction.emoji):
+            if not self._matches(b["emoji"], payload.emoji):
                 continue
             role = guild.get_role(b["role_id"])
-            if role is not None and role in user.roles:
+            member = guild.get_member(payload.user_id)
+            if role is not None and member is not None and role in member.roles:
                 try:
-                    await user.remove_roles(role)
+                    await member.remove_roles(role, reason="Reaction role removed")
                 except Exception as e:
-                    self.log.warning("reaction role remove failed for %s: %s", user.id, e)
+                    self.log.warning("reaction role remove failed for %s: %s", payload.user_id, e)
             break
 
     @commands.Cog.listener()

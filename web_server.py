@@ -320,6 +320,15 @@ async def _apply(bot, session, guild_id, section, data):
                 )
             settings = db.get_boost_settings(gid) or {}
             bot.boost_settings[gid] = settings
+            if channel:
+                target = guild.get_channel(channel)
+                if target is not None:
+                    boost_cog = bot.get_cog("BoostCog")
+                    if boost_cog is not None:
+                        try:
+                            await boost_cog._render_panel(guild, target)
+                        except Exception as e:
+                            log.warning("boost panel post via web failed: %s", e)
     elif section == "reactionrole":
         action = data.get("action")
         if action == "create":
