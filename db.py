@@ -89,6 +89,27 @@ class Database:
             "message_id BIGINT NOT NULL, emoji TEXT NOT NULL, role_id BIGINT NOT NULL, "
             "UNIQUE (message_id, emoji))"
         )
+        self.execute(
+            "CREATE TABLE IF NOT EXISTS leveling ("
+            "guild_id BIGINT, user_id BIGINT, xp BIGINT DEFAULT 0, "
+            "level INTEGER DEFAULT 0, total_messages INTEGER DEFAULT 0, "
+            "voice_minutes INTEGER DEFAULT 0, commands_used INTEGER DEFAULT 0, "
+            "last_gain TIMESTAMP, PRIMARY KEY (guild_id, user_id))"
+        )
+        self.execute(
+            "CREATE TABLE IF NOT EXISTS level_rewards ("
+            "guild_id BIGINT, level INTEGER, role_id BIGINT, "
+            "PRIMARY KEY (guild_id, level))"
+        )
+        self.execute(
+            "CREATE TABLE IF NOT EXISTS level_settings ("
+            "guild_id BIGINT PRIMARY KEY, enabled BOOLEAN DEFAULT TRUE, "
+            "announce_channel BIGINT, xp_per_message INTEGER DEFAULT 25, "
+            "cooldown_seconds INTEGER DEFAULT 60, levelup_text TEXT, "
+            "xp_per_voice INTEGER DEFAULT 20, first_place_role BIGINT)"
+        )
+        self.execute("ALTER TABLE level_settings ADD COLUMN IF NOT EXISTS levelup_text TEXT")
+        self.execute("ALTER TABLE level_settings ADD COLUMN IF NOT EXISTS xp_per_voice INTEGER DEFAULT 20")
 
     def get_all_log_channels(self):
         rows = self.fetchall("SELECT guild_id, channel_id FROM mod_log_settings")
@@ -250,3 +271,124 @@ class Database:
             (guild_id, channel_id, message_id),
         )
         return [{"emoji": e, "role_id": int(r)} for e, r in rows]
+
+    def get_leveling(self, guild_id, user_id):
+        row = self.fetchone(
+            "SELECT xp, level, total_messages, voice_minutes, commands_used, last_gain FROM leveling WHERE guild_id = %s AND user_id = %s",
+            (guild_id, user_id),
+        )
+        if not row:
+            return None
+        return {
+            "xp": int(row[0]),
+            "level": int(row[1]),
+            "total_messages": int(row[2]) if row[2] else 0,
+            "voice_minutes": int(row[3]) if row[3] else 0,
+            "commands_used": int(row[4]) if row[4] else 0,
+            "last_gain": row[5],
+        }
+
+    def save_leveling(self, guild_id, user_id, xp, level, total_messages, voice_minutes, commands_used, last_gain=None):
+        self.execute(
+            """
+            INSERT INTO leveling (guild_id, user_id, xp, level, total_messages, voice_minutes, commands_used, last_gain)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (guild_id, user_id) DO UPDATE SET
+                xp = EXCLUDED.xp,
+                level = EXCLUDED.level,
+                total_messages = EXCLUDED.total_messages,
+                voice_minutes = EXCLUDED.voice_minutes,
+                commands_used = EXCLUDED.commands_used,
+                last_gain = EXCLUDED.last_gain
+            """,
+            (guild_id, user_id, xp, level, total_messages, voice_minutes, commands_used, last_gain),
+        )
+
+    def get_level_settings(self, guild_id):
+        row = self.fetchone(
+            "SELECT enabled, announce_channel, xp_per_message, cooldown_seconds, levelup_text, xp_per_voice, first_place_role FROM level_settings WHERE guild_id = %s",
+            (guild_id,),
+        )
+        if not row:
+            return {
+                "enabled": True,
+                "announce_channel": None,
+                "xp_per_message": 25,
+                "cooldown_seconds": 60,
+                "levelup_text": None,
+                "xp_per_voice": 20,
+                "first_place_role": None,
+            }
+        return {
+            "enabled": row[0] is not False,
+            "announce_channel": int(row[1]) if row[1] else None,
+            "xp_per_message": int(row[2]) if row[2] else 25,
+            "cooldown_seconds": int(row[3]) if row[3] else 60,
+            "levelup_text": row[4],
+            "xp_per_voice": int(row[5]) if row[5] else 20,
+            "first_place_role": int(row[6]) if row[6] else None,
+        }
+
+    _SKIP = object()
+
+    def save_level_settings(self, guild_id, *, enabled=_SKIP, announce_channel=_SKIP, xp_per_message=_SKIP,
+                            cooldown_seconds=_SKIP, levelup_text=_SKIP, xp_per_voice=_SKIP, first_place_role=_SKIP):
+        cur = self.get_level_settings(guild_id)
+        def pick(v, key):
+            return cur[key] if v is self._SKIP else v
+        self.execute(
+            """
+            INSERT INTO level_settings (guild_id, enabled, announce_channel, xp_per_message, cooldown_seconds, levelup_text, xp_per_voice, first_place_role)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (guild_id) DO UPDATE SET
+                enabled = EXCLUDED.enabled,
+                announce_channel = EXCLUDED.announce_channel,
+                xp_per_message = EXCLUDED.xp_per_message,
+                cooldown_seconds = EXCLUDED.cooldown_seconds,
+                levelup_text = EXCLUDED.levelup_text,
+                xp_per_voice = EXCLUDED.xp_per_voice,
+                first_place_role = EXCLUDED.first_place_role
+            """,
+            (
+                guild_id,
+                pick(enabled, "enabled"),
+                pick(announce_channel, "announce_channel"),
+                pick(xp_per_message, "xp_per_message"),
+                pick(cooldown_seconds, "cooldown_seconds"),
+                pick(levelup_text, "levelup_text"),
+                pick(xp_per_voice, "xp_per_voice"),
+                pick(first_place_role, "first_place_role"),
+            ),
+        )
+
+    def get_level_rewards(self, guild_id):
+        rows = self.fetchall(
+            "SELECT level, role_id FROM level_rewards WHERE guild_id = %s ORDER BY level",
+            (guild_id,),
+        )
+        return {int(level): int(role_id) for level, role_id in rows}
+
+    def get_leveling_leaderboard(self, guild_id, limit=10):
+        rows = self.fetchall(
+            "SELECT user_id, xp, level FROM leveling WHERE guild_id = %s ORDER BY xp DESC LIMIT %s",
+            (guild_id, limit),
+        )
+        return [(int(user_id), int(xp), int(level)) for user_id, xp, level in rows]
+
+    def get_leveling_top_user(self, guild_id):
+        row = self.fetchone(
+            "SELECT user_id FROM leveling WHERE guild_id = %s ORDER BY xp DESC LIMIT 1",
+            (guild_id,),
+        )
+        return int(row[0]) if row else None
+
+    def get_leveling_rank(self, guild_id, user_id):
+        row = self.fetchone(
+            "SELECT COUNT(*) FROM leveling WHERE guild_id = %s AND xp > COALESCE((SELECT xp FROM leveling WHERE guild_id = %s AND user_id = %s), 0)",
+            (guild_id, guild_id, user_id),
+        )
+        total = self.fetchone(
+            "SELECT COUNT(*) FROM leveling WHERE guild_id = %s",
+            (guild_id,),
+        )
+        return int(row[0]) + 1, int(total[0]) if total and total[0] else 0

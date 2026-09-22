@@ -43,6 +43,24 @@ class SetupCog(commands.Cog):
             ),
             inline=False,
         )
+        embed.add_field(
+            name="🎮 Leveling",
+            value=(
+                "**1.** `/rank [member]`\n"
+                "See your level, XP and server rank.\n"
+                "**2.** `/leveling top`\n"
+                "View the level leaderboard.\n"
+                "**3.** `/leveling settings` *(Manage Server)*\n"
+                "See this server's leveling config.\n"
+                "**4.** `/leveling channel <channel>` *(Manage Server)*\n"
+                "Choose where level-up messages go.\n"
+                "**5.** `/leveling roles`\n"
+                "View the level reward roles.\n\n"
+                "› Chat and hang out in voice channels to earn XP. "
+                "`/leveling xp`, `cooldown`, `text` and `toggle` fine-tune the system."
+            ),
+            inline=False,
+        )
         embed.set_footer(text="Tips: custom emojis are supported — just paste them.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
