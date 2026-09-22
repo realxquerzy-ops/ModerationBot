@@ -112,9 +112,22 @@ async def _self_ping_loop():
         await asyncio.sleep(300)
 
 
+def _has_setup(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return "def setup(" in f.read()
+    except OSError:
+        return False
+
+
 async def _load_extensions():
     for filename in sorted(os.listdir("./commands")):
-        if filename.endswith(".py") and filename != "__init__.py":
+        full = os.path.join("./commands", filename)
+        if (
+            filename.endswith(".py")
+            and filename != "__init__.py"
+            and _has_setup(full)
+        ):
             name = f"commands.{filename[:-3]}"
             try:
                 await bot.load_extension(name)
