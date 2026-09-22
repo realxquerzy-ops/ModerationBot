@@ -439,6 +439,25 @@ class WebHandler(BaseHTTPRequestHandler):
             headers.update(extra_headers)
         self._send(302, b"", headers=headers)
 
+    def _doc_page(self, title, sections, updated):
+        body = "".join(
+            f"<h2>{heading}</h2><p>{text}</p>" for heading, text in sections
+        )
+        self._send(200, f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title} - Setup Panel</title><style>
+body{{font-family:system-ui,sans-serif;background:#1e1f29;color:#e8e8f0;margin:0;line-height:1.6}}
+.wrap{{max-width:760px;margin:0 auto;padding:32px 20px 60px}}
+h1{{font-size:22px}} h2{{font-size:16px;margin-top:24px}}
+a{{color:#8ab4ff;text-decoration:none}}
+.top{{margin-bottom:8px;font-size:14px}}
+</style></head><body><div class="wrap">
+<p class="top"><a href="/">&larr; Home</a></p>
+<h1>{title}</h1>
+<p class="top">Last updated: {updated}</p>
+{body}
+</div></body></html>""")
+
     def _error_page(self, message):
         self._send(200, f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -475,6 +494,81 @@ a{{color:#8ab4ff;text-decoration:none}}
             self._send(200, data)
         elif path == "/health":
             self._send(200, "OK", "text/plain")
+        elif path == "/privacy":
+            self._doc_page(
+                "Privacy Policy",
+                [
+                    (
+                        "What this service is",
+                        "ModBirdBot is a Discord moderation, leveling and reaction-role bot with a "
+                        "web setup panel. The panel is used only to configure settings for servers "
+                        "you manage.",
+                    ),
+                    (
+                        "What we store",
+                        "Per server: the server ID, the configured logging/announce channel IDs, "
+                        "role IDs, emoji-to-role reaction bindings, leveling settings and boost "
+                        "panel settings. Per user on servers that use it: your Discord user ID plus "
+                        "leveling stats (XP, level, message/voice minutes) and boost start/end "
+                        "events. We do not store chat message content or your Discord password.",
+                    ),
+                    (
+                        "Login",
+                        "Logging in uses Discord's OAuth and is owned by Discord. We issue a "
+                        "session cookie (kept up to 7 days) to recognize you. Analytics/tracking "
+                        "cookies are not used.",
+                    ),
+                    (
+                        "Why we store it",
+                        "Server settings must persist so the bot keeps working after restarts, and "
+                        "leveling/boost history need user IDs to function. This data is used only "
+                        "to run the bot and is never sold or shared.",
+                    ),
+                    (
+                        "Deleting your data",
+                        "Removing the bot from a server deletes that server's settings and its "
+                        "members' leveling data. Boost and leveling data for a user is deleted "
+                        "when the bot leaves that server or on request; contact the bot owner to "
+                        "request removal.",
+                    ),
+                ],
+                "2026-09-22",
+            )
+        elif path == "/terms":
+            self._doc_page(
+                "Terms of Service",
+                [
+                    (
+                        "Acceptance",
+                        "By adding ModBirdBot to your server or using the setup panel you agree "
+                        "to these terms.",
+                    ),
+                    (
+                        "Permission to configure",
+                        "You may only change settings for servers where you have the Manage Server "
+                        "permission in Discord. The bot enforces this for every change.",
+                    ),
+                    (
+                        "Acceptable use",
+                        "The bot is provided as-is, free of charge, for legitimate community setup "
+                        "and moderation. Abuse (spam, deliberate role/level manipulation, automated "
+                        "attacks) may result in the bot being removed from your server or access "
+                        "being revoked.",
+                    ),
+                    (
+                        "No warranty",
+                        "The bot and panel are provided without warranty, express or implied. "
+                        "Features may change or be discontinued at any time without notice. We are "
+                        "not liable for any loss resulting from use of the bot.",
+                    ),
+                    (
+                        "Changes",
+                        "We may update these terms. Continued use after changes means you accept "
+                        "the new terms.",
+                    ),
+                ],
+                "2026-09-22",
+            )
         elif path == "/auth/login":
             self._handle_login()
         elif path == "/auth/callback":
