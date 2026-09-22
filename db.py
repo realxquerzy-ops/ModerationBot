@@ -1,3 +1,6 @@
+import json
+import time
+
 from psycopg2.pool import ThreadedConnectionPool
 
 
@@ -110,6 +113,40 @@ class Database:
         )
         self.execute("ALTER TABLE level_settings ADD COLUMN IF NOT EXISTS levelup_text TEXT")
         self.execute("ALTER TABLE level_settings ADD COLUMN IF NOT EXISTS xp_per_voice INTEGER DEFAULT 20")
+        self.execute(
+            "CREATE TABLE IF NOT EXISTS web_sessions ("
+            "token TEXT PRIMARY KEY, user_id TEXT, username TEXT, "
+            "manageable TEXT NOT NULL DEFAULT '{}', expires BIGINT NOT NULL)"
+        )
+
+    def save_web_session(self, token, user_id, username, manageable, expires):
+        self.execute(
+            "INSERT INTO web_sessions (token, user_id, username, manageable, expires) "
+            "VALUES (%s, %s, %s, %s, %s) "
+            "ON CONFLICT (token) DO UPDATE SET user_id = EXCLUDED.user_id, "
+            "username = EXCLUDED.username, manageable = EXCLUDED.manageable, "
+            "expires = EXCLUDED.expires",
+            (token, user_id, username, json.dumps(manageable), int(expires)),
+        )
+
+    def get_web_session(self, token):
+        row = self.fetchone(
+            "SELECT user_id, username, manageable, expires FROM web_sessions WHERE token = %s",
+            (token,),
+        )
+        if not row:
+            return None
+        return {
+            "user": {"id": row[0], "username": row[1]},
+            "manageable": json.loads(row[2] or "{}"),
+            "exp": float(row[3]),
+        }
+
+    def delete_web_session(self, token):
+        self.execute("DELETE FROM web_sessions WHERE token = %s", (token,))
+
+    def cleanup_web_sessions(self):
+        self.execute("DELETE FROM web_sessions WHERE expires < %s", (int(time.time()),))
 
     def get_all_log_channels(self):
         rows = self.fetchall("SELECT guild_id, channel_id FROM mod_log_settings")

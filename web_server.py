@@ -134,11 +134,24 @@ def _extract_manageable(guilds):
 
 def _new_session(user, manageable):
     token = secrets.token_urlsafe(24)
-    SESSIONS[token] = {
+    session = {
         "user": user,
         "manageable": manageable,
         "exp": time.time() + SESSION_TTL,
     }
+    SESSIONS[token] = session
+    db = getattr(BOT, "db", None)
+    if db is not None:
+        try:
+            db.save_web_session(
+                token,
+                user.get("id"),
+                user.get("username"),
+                manageable,
+                session["exp"],
+            )
+        except Exception:
+            log.warning("web session persist failed", exc_info=True)
     return token
 
 
@@ -475,11 +488,25 @@ a{{color:#8ab4ff;text-decoration:none}}
         raw = self.headers.get("Cookie", "")
         for part in raw.split(";"):
             key, _, value = part.strip().partition("=")
-            if key == "mb_session":
-                session = SESSIONS.get(value)
-                if session and session["exp"] > time.time():
-                    return session
+            if key != "mb_session":
+                continue
+            session = SESSIONS.get(value)
+            if session and session["exp"] > time.time():
+                return session
+            if session:
                 SESSIONS.pop(value, None)
+            db = getattr(BOT, "db", None)
+            if db is not None:
+                try:
+                    saved = db.get_web_session(value)
+                    if saved and saved["exp"] > time.time():
+                        SESSIONS[value] = saved
+                        return saved
+                    if saved:
+                        db.delete_web_session(value)
+                except Exception:
+                    pass
+            return None
         return None
 
     def do_GET(self):
@@ -679,8 +706,15 @@ a{{color:#8ab4ff;text-decoration:none}}
         raw = self.headers.get("Cookie", "")
         for part in raw.split(";"):
             key, _, value = part.strip().partition("=")
-            if key == "mb_session":
-                SESSIONS.pop(value, None)
+            if key != "mb_session":
+                continue
+            SESSIONS.pop(value, None)
+            db = getattr(BOT, "db", None)
+            if db is not None:
+                try:
+                    db.delete_web_session(value)
+                except Exception:
+                    pass
         self._redirect("/", {"Set-Cookie": "mb_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"})
 
     def _handle_bootstrap(self, query):
@@ -688,7 +722,13 @@ a{{color:#8ab4ff;text-decoration:none}}
         if not session:
             self._json(401, {"ok": False, "error": "not_authed"})
             return
-        if BOT is None or BOT.db is None:
+        db = getattr(BOT, "db", None)
+        if db is not None:
+            try:
+                db.cleanup_web_sessions()
+            except Exception:
+                pass
+        if BOT is None or db is None:
             self._json(503, {"ok": False, "error": "Bot is still starting up. Try again in a few seconds."})
             return
         params = {k: v[0] for k, v in urllib.parse.parse_qs(query).items()}
