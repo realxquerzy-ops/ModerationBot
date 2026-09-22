@@ -1,9 +1,13 @@
 import asyncio
+import io
 import time
 from datetime import datetime, timezone
 
+import aiohttp
 import discord
 from discord.ext import commands
+
+from .leveling_image import render_leaderboard
 
 
 class LevelingCog(commands.Cog):
@@ -11,6 +15,8 @@ class LevelingCog(commands.Cog):
         self.bot = bot
         self.last_message_xp = {}
         self.voice_sessions = {}
+        self._avatar_cache = {}
+        self._session = None
 
     def xp_for_level(self, level):
         return 200 * level
@@ -149,6 +155,11 @@ class LevelingCog(commands.Cog):
 
     async def cog_load(self):
         self._loop_started = False
+
+    async def cog_unload(self):
+        if self._session is not None:
+            await self._session.close()
+            self._session = None
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -306,6 +317,64 @@ class LevelingCog(commands.Cog):
         )
         embed.set_footer(text="Top XP earns the first place role (if configured)!")
         await interaction.followup.send(embed=embed)
+
+    async def _avatar_pil(self, member):
+        if member is None:
+            return None
+        if member.id in self._avatar_cache:
+            return self._avatar_cache[member.id]
+        try:
+            if self._session is None:
+                self._session = aiohttp.ClientSession()
+            asset = member.display_avatar.with_format("png").with_size(128)
+            async with self._session.get(asset.url) as resp:
+                if resp.status != 200:
+                    self._avatar_cache[member.id] = None
+                    return None
+                data = await resp.read()
+            from PIL import Image
+            img = Image.open(io.BytesIO(data)).convert("RGBA")
+            self._avatar_cache[member.id] = img
+            return img
+        except Exception:
+            self._avatar_cache[member.id] = None
+            return None
+
+    async def _lb_entries(self, guild, user_ids):
+        entries = []
+        for user_id in user_ids:
+            member = guild.get_member(user_id)
+            if member is not None:
+                rec = self.bot.db.get_leveling(guild.id, user_id)
+                if rec is None:
+                    continue
+                level, into, need = self.level_progress(rec["xp"])
+                entries.append((member.display_name, await self._avatar_pil(member), level, into, need, int(rec["xp"])))
+        return entries
+
+    @discord.app_commands.command(name="lb", description="View the server leveling leaderboard as an image")
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def lb(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        if not interaction.guild:
+            await interaction.followup.send("This command can only be used in a server!", ephemeral=True)
+            return
+        guild = interaction.guild
+        rows = self.bot.db.get_leveling_leaderboard(guild.id, limit=10)
+        if not rows:
+            await interaction.followup.send("No leveling data yet. Start chatting to earn XP!", ephemeral=True)
+            return
+
+        user_ids = [r[0] for r in rows]
+        entries = await self._lb_entries(guild, user_ids)
+        if not entries:
+            await interaction.followup.send("No leveling data yet. Start chatting to earn XP!", ephemeral=True)
+            return
+
+        buf = render_leaderboard(entries, guild.name)
+        file = discord.File(buf, filename="leaderboard.png")
+        await interaction.followup.send(file=file)
 
     @lvl_group.command(name="settings", description="View this server's leveling settings (Manage Server)")
     async def leveling_settings(self, interaction: discord.Interaction):
