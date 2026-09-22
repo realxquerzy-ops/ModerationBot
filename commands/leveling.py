@@ -148,7 +148,14 @@ class LevelingCog(commands.Cog):
             self.voice_sessions[key] = time.time()
 
     async def cog_load(self):
-        self.bot.loop.create_task(self._first_place_loop())
+        self._loop_started = False
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        if self._loop_started:
+            return
+        self._loop_started = True
+        asyncio.create_task(self._first_place_loop())
 
     async def _first_place_loop(self):
         await self.bot.wait_until_ready()
