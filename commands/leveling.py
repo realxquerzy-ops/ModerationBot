@@ -372,9 +372,9 @@ class LevelingCog(commands.Cog):
             await interaction.followup.send("No leveling data yet. Start chatting to earn XP!", ephemeral=True)
             return
 
-        buf = render_leaderboard(entries, guild.name)
+        buf = render_leaderboard(entries)
         file = discord.File(buf, filename="leaderboard.png")
-        await interaction.followup.send(file=file)
+        await interaction.followup.send(content=f"# **{guild.name}**", file=file)
 
     @lvl_group.command(name="settings", description="View this server's leveling settings (Manage Server)")
     async def leveling_settings(self, interaction: discord.Interaction):
