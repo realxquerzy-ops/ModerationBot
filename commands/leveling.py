@@ -84,7 +84,7 @@ class LevelingCog(commands.Cog):
             .replace("{server}", guild.name if guild else "this server")
         )
 
-        target = self.bot.get_channel(settings["announce_channel"]) if settings["announce_channel"] else None
+        target = guild.get_channel(settings["announce_channel"]) if guild and settings["announce_channel"] else None
         if target is None and channel is not None:
             target = channel
         if target is not None:
@@ -245,7 +245,7 @@ class LevelingCog(commands.Cog):
     async def _settings_embed(self, guild):
         s = self.bot.db.get_level_settings(guild.id)
         rewards = self.bot.db.get_level_rewards(guild.id)
-        channel_name = self.bot.get_channel(s["announce_channel"]) if s["announce_channel"] else None
+        channel_name = guild.get_channel(s["announce_channel"]) if s["announce_channel"] else None
         role_name = guild.get_role(s["first_place_role"]) if s["first_place_role"] else None
 
         reward_lines = "\n".join(

@@ -360,7 +360,7 @@ async def _apply_reaction_create(bot, guild, db, data):
     lines = []
     for token, rid in deduped:
         role = guild.get_role(rid)
-        lines.append(f"{_emoji_display(token)} → {role.mention}")
+        lines.append(f"{_emoji_display(token)} → {role.mention if role else f'<@&{rid}>'}")
     embed_desc = description or "\n".join(lines) or None
     embed_color = discord.Color.blue()
     try:

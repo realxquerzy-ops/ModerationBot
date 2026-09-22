@@ -272,6 +272,7 @@ function render() {
     lastGuildId = state.guild.id;
     rewardDirty = false;
     rewards.innerHTML = "";
+    $("rr_rows").innerHTML = "";
   }
   if (!rewardDirty && !rewards.children.length) buildRewardRows();
 
