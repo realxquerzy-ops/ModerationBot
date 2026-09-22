@@ -30,6 +30,17 @@ DISCORD_API = "https://discord.com/api"
 ADMINISTRATOR = 1 << 3
 MANAGE_GUILD = 1 << 5
 
+INVITE_PERMISSIONS = (
+    (1 << 6)   |  # Add Reactions
+    (1 << 10)  |  # View Channels
+    (1 << 11)  |  # Send Messages
+    (1 << 13)  |  # Manage Messages
+    (1 << 14)  |  # Embed Links
+    (1 << 17)  |  # Read Message History
+    (1 << 18)  |  # Use External Emojis
+    (1 << 28)     # Manage Roles
+)
+
 log = logging.getLogger("web")
 
 _REACTION_RE = re.compile(r"<((?P<anim>a)?:(?P<name>[^:>]+):(?P<id>\d+))>")
@@ -198,8 +209,9 @@ async def _gather(bot, user, session, guild_id):
             "https://discord.com/api/oauth2/authorize?"
             + urllib.parse.urlencode({
                 "client_id": _client_id(),
-                "permissions": 8,
+                "permissions": INVITE_PERMISSIONS,
                 "scope": "bot applications.commands",
+                "guild_id": str(gid),
             })
         )
     return {
