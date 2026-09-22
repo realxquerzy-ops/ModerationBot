@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bird Server — Setup Panel</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+         background: #16171f; color: #e8e8f0; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+           padding: 14px 0 20px; border-bottom: 1px solid #2a2c3a; }
+  header h1 { font-size: 20px; margin: 0; }
+  header .spacer { flex: 1; }
+  .btn { display: inline-block; background: #3b3d52; color: #e8e8f0; border: 1px solid #4a4d66;
+         border-radius: 8px; padding: 8px 14px; font-size: 14px; cursor: pointer; text-decoration: none; }
+  .btn:hover { background: #45485f; }
+  .btn.primary { background: #5865f2; border-color: #5865f2; color: #fff; }
+  .btn.primary:hover { background: #4752c4; }
+  .btn.danger { background: #da373c; border-color: #da373c; color: #fff; }
+  .btn.danger:hover { background: #b12f34; }
+  .card { background: #20212c; border: 1px solid #2f3144; border-radius: 14px; padding: 18px 20px; margin-top: 18px; }
+  .card h2 { margin: 0 0 14px; font-size: 17px; }
+  .card p.hint { margin: 0 0 12px; color: #9a9cb2; font-size: 13px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+  .row label { flex: 0 0 170px; font-size: 13px; color: #b9bac9; }
+  .row label.wide { flex: 0 0 340px; }
+  select, input[type=text], input[type=number] { background: #16171f; color: #e8e8f0; border: 1px solid #3a3d52;
+    border-radius: 8px; padding: 8px 10px; font-size: 14px; min-width: 220px; }
+  input[type=text] { flex: 1; min-width: 280px; }
+  input[type=number] { min-width: 110px; width: 110px; }
+  .actions { margin-top: 14px; display: flex; gap: 8px; }
+  .status { margin-top: 10px; font-size: 13px; min-height: 18px; }
+  .status.ok { color: #7bd88f; }
+  .status.err { color: #ff7b80; }
+  .level-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+  .level-row .lvl { width: 90px; font-weight: 600; }
+  .login { text-align: center; padding: 48px 16px; }
+  .login h1 { font-size: 26px; }
+  .login p { color: #9a9cb2; }
+  .login a.btn { margin-top: 18px; font-size: 16px; padding: 12px 22px; }
+  #loading { text-align: center; padding: 60px 0; color: #9a9cb2; }
+  .muted { color: #9a9cb2; font-size: 13px; }
+  code { background: #16171f; padding: 2px 5px; border-radius: 5px; font-size: 12px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+  @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="loading">Loading…</div>
+
+  <div id="login" class="login" style="display:none">
+    <h1>⚙️ Bird Server Setup</h1>
+    <p>The control panel for <strong>Mod BirdBot</strong>.</p>
+    <p class="muted">You need <strong>Manage Server</strong> (or Administrator) in the server to use it.</p>
+    <a class="btn primary" href="/auth/login">Continue with Discord</a>
+  </div>
+
+  <div id="panel" style="display:none">
+    <header>
+      <h1>⚙️ <span id="serverName"></span> Setup</h1>
+      <span class="muted" id="whoami"></span>
+      <span class="spacer"></span>
+      <a class="btn" id="inviteBtn" target="_blank" rel="noopener">Invite Bot</a>
+      <a class="btn danger" href="/auth/logout">Log out</a>
+    </header>
+
+    <div class="card">
+      <h2>🔧 Moderation Logging</h2>
+      <p class="hint">Where the bot posts member-join/leave, avatar change and server logs.</p>
+      <div class="row"><label>Log channel</label><select id="mm_logChannel"></select></div>
+      <div class="actions"><button class="btn primary" data-save="mod_log">Save</button></div>
+      <div class="status" id="st_mod_log"></div>
+    </div>
+
+    <div class="card">
+      <h2>🎮 Leveling</h2>
+      <p class="hint">Earn XP from chat and voice. Level ups grant role rewards.</p>
+      <div class="row"><label>Enabled</label><input type="checkbox" id="lv_enabled"></div>
+      <div class="row"><label>Announce channel</label><select id="lv_channel"></select></div>
+      <div class="grid2">
+        <div class="row"><label>XP / message</label><input type="number" id="lv_xpMsg" min="1" max="10000"></div>
+        <div class="row"><label>Cooldown (s)</label><input type="number" id="lv_cooldown" min="0" max="86400"></div>
+        <div class="row"><label>XP / voice min</label><input type="number" id="lv_voiceXp" min="0" max="10000"></div>
+        <div class="row"><label>First place role</label><select id="lv_firstPlace"></select></div>
+      </div>
+      <div class="row"><label class="wide">Level up message</label>
+        <input type="text" id="lv_text" placeholder="{user} leveled up to Level {level}!"></div>
+      <div class="actions"><button class="btn primary" data-save="leveling">Save</button></div>
+      <div class="status" id="st_leveling"></div>
+    </div>
+
+    <div class="card">
+      <h2>🎖️ Level Reward Roles</h2>
+      <p class="hint">Roles assigned automatically when a member reaches each level.</p>
+      <div id="rewards"></div>
+      <div class="actions"><button class="btn primary" data-save="rewards">Save roles</button></div>
+      <div class="status" id="st_rewards"></div>
+    </div>
+
+    <div class="card">
+      <h2>🚀 Server Boosts</h2>
+      <p class="hint">The boost panel channel and the shown boost role.</p>
+      <div class="row"><label>Boost channel</label><select id="bo_channel"></select></div>
+      <div class="row"><label>Boost role</label><select id="bo_role"></select></div>
+      <div class="actions">
+        <button class="btn primary" data-save="boost">Save</button>
+        <button class="btn danger" data-clear="boost">Clear boost settings</button>
+      </div>
+      <div class="status" id="st_boost"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const REWARD_LEVELS = [5, 10, 25, 35, 50, 75, 100];
+let state = null;
+
+const $ = (id) => document.getElementById(id);
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  if (r.status === 401) throw new Error("not_authed");
+  const data = await r.json().catch(() => ({}));
+  if (data && data.ok === false) throw new Error(data.error || "Server error");
+  return data;
+}
+
+function textChannels() {
+  return (state.channels || []).filter(c => c.type === "text");
+}
+
+function fillSelect(el, items, selected, placeholder) {
+  el.innerHTML = "";
+  if (placeholder !== undefined) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = placeholder;
+    el.appendChild(opt);
+  }
+  for (const it of items) {
+    const opt = document.createElement("option");
+    opt.value = it.id;
+    opt.textContent = it.name;
+    el.appendChild(opt);
+  }
+  if (selected) el.value = selected;
+}
+
+function render() {
+  const s = state.settings;
+  $("serverName").textContent = state.guild.name;
+  $("whoami").textContent = "Signed in as " + (state.user.username || "you");
+  const inv = $("inviteBtn");
+  if (state.invite_url) { inv.href = state.invite_url; inv.style.display = ""; }
+  else { inv.style.display = "none"; }
+
+  fillSelect($("mm_logChannel"), textChannels(), s.mod_log.channel_id, "None (no logging)");
+
+  $("lv_enabled").checked = !!s.leveling.enabled;
+  fillSelect($("lv_channel"), textChannels(), s.leveling.announce_channel, "Auto (message channel)");
+  fillSelect($("lv_firstPlace"), state.roles, s.leveling.first_place_role, "Not set");
+  $("lv_xpMsg").value = s.leveling.xp_per_message;
+  $("lv_cooldown").value = s.leveling.cooldown_seconds;
+  $("lv_voiceXp").value = s.leveling.xp_per_voice;
+  $("lv_text").value = s.leveling.levelup_text || "";
+
+  const rewards = $("rewards");
+  rewards.innerHTML = "";
+  for (const lvl of REWARD_LEVELS) {
+    const row = document.createElement("div");
+    row.className = "level-row";
+    const lbl = document.createElement("span");
+    lbl.className = "lvl";
+    lbl.textContent = "Level " + lvl;
+    const sel = document.createElement("select");
+    sel.dataset.level = lvl;
+    fillSelect(sel, state.roles, s.rewards[String(lvl)] || "", "None");
+    row.appendChild(lbl); row.appendChild(sel);
+    rewards.appendChild(row);
+  }
+
+  fillSelect($("bo_channel"), textChannels(), s.boost.channel_id, "None");
+  fillSelect($("bo_role"), state.roles, s.boost.boost_role_id, "None");
+}
+
+async function load() {
+  state = await api("/api/bootstrap");
+  $("loading").style.display = "none";
+  $("login").style.display = "none";
+  $("panel").style.display = "";
+  render();
+}
+
+function showLogin() {
+  $("loading").style.display = "none";
+  $("panel").style.display = "none";
+  $("login").style.display = "";
+}
+
+function setStatus(id, msg, ok) {
+  const el = $(id);
+  el.textContent = msg;
+  el.className = "status " + (ok ? "ok" : "err");
+}
+
+async function save(section) {
+  const s = state.settings;
+  const data = {};
+  if (section === "mod_log") {
+    data.channel_id = $("mm_logChannel").value;
+  } else if (section === "leveling") {
+    data.enabled = $("lv_enabled").checked;
+    data.announce_channel = $("lv_channel").value;
+    data.xp_per_message = parseInt($("lv_xpMsg").value, 10);
+    data.cooldown_seconds = parseInt($("lv_cooldown").value, 10);
+    data.xp_per_voice = parseInt($("lv_voiceXp").value, 10);
+    data.levelup_text = $("lv_text").value;
+    data.first_place_role = $("lv_firstPlace").value;
+  } else if (section === "rewards") {
+    const roles = {};
+    document.querySelectorAll("#rewards select").forEach(sel => {
+      if (sel.value) roles[sel.dataset.level] = sel.value;
+    });
+    data.roles = roles;
+  } else if (section === "boost") {
+    data.channel_id = $("bo_channel").value;
+    data.boost_role_id = $("bo_role").value;
+  }
+  const res = await api("/api/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ section, data }),
+  });
+  await load();
+  setStatus("st_" + section, "Saved ✓", true);
+  return res;
+}
+
+document.querySelectorAll("[data-save]").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const section = btn.dataset.save;
+    setStatus("st_" + section, "Saving…", true);
+    try { await save(section); }
+    catch (e) { setStatus("st_" + section, "Error: " + e.message, false); }
+  });
+});
+
+document.querySelectorAll("[data-clear]").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const section = btn.dataset.clear;
+    setStatus("st_" + section, "Saving…", true);
+    try {
+      await api("/api/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ section, data: { clear: true } }),
+      });
+      await load();
+      setStatus("st_" + section, "Cleared ✓", true);
+    } catch (e) { setStatus("st_" + section, "Error: " + e.message, false); }
+  });
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  load().catch(e => { if (e.message === "not_authed") showLogin(); });
+});
+</script>
+</body>
+</html>

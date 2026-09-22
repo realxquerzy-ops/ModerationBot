@@ -368,6 +368,14 @@ class Database:
         )
         return {int(level): int(role_id) for level, role_id in rows}
 
+    def save_level_rewards(self, guild_id, roles):
+        self.execute("DELETE FROM level_rewards WHERE guild_id = %s", (guild_id,))
+        for level, role_id in roles.items():
+            self.execute(
+                "INSERT INTO level_rewards (guild_id, level, role_id) VALUES (%s, %s, %s)",
+                (guild_id, level, role_id),
+            )
+
     def get_leveling_leaderboard(self, guild_id, limit=10):
         rows = self.fetchall(
             "SELECT user_id, xp, level FROM leveling WHERE guild_id = %s ORDER BY xp DESC LIMIT %s",

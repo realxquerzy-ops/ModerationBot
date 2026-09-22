@@ -2,14 +2,13 @@ import asyncio
 import logging
 import os
 import sys
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import aiohttp
 import discord
 from discord.ext import commands
 
 from db import Database
+import web_server
 
 try:
     from dotenv import load_dotenv
@@ -39,6 +38,8 @@ bot._keepalive_started = False
 bot.db = None
 bot.log_channels = {}
 bot.boost_settings = {}
+bot._api_loop = None
+web_server.BOT = bot
 
 
 @bot.tree.error
@@ -57,6 +58,8 @@ async def on_tree_error(interaction: discord.Interaction, error: Exception):
 @bot.event
 async def on_ready():
     logging.info("Logged in as %s. Guilds: %s", bot.user, [g.name for g in bot.guilds])
+    bot._api_loop = asyncio.get_running_loop()
+    web_server.TARGET_GUILD_ID = bot.guilds[0].id if bot.guilds else None
     try:
         await bot.tree.sync()
         for guild in bot.guilds:
@@ -87,12 +90,8 @@ async def on_guild_join(guild):
         logging.error("Guild join sync error: %s", e)
 
 
-def _start_health_server():
-    port = int(os.getenv("PORT", "8080"))
-    server = ThreadingHTTPServer(("0.0.0.0", port), _HealthHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    logging.info("[health] Listening on :%s", port)
+def _start_web_server():
+    web_server.start_server()
 
 
 def _get_public_url():
@@ -125,18 +124,7 @@ async def _load_extensions():
                 logging.error("Failed to load extension %s: %s", name, e)
 
 
-class _HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain")
-        self.end_headers()
-        self.wfile.write(b"OK")
-
-    def log_message(self, *args):
-        pass
-
-
-_start_health_server()
+_start_web_server();
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
