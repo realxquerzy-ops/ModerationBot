@@ -124,6 +124,32 @@
         <button class="btn danger" data-clear="boost">Clear boost settings</button>
       </div>
       <div class="status" id="st_boost"></div>
+
+    <div class="card">
+      <h2>Welcomer</h2>
+      <p class="hint">Welcome and goodbye messages posted when members join or leave. Leave a channel as "None" to auto-pick one.</p>
+      <div class="row"><label>Welcome enabled</label><input type="checkbox" id="wm_enabled"></div>
+      <div class="row"><label>Welcome channel</label><select id="wm_channel"></select></div>
+      <div class="row"><label class="wide">Welcome message</label>
+        <input type="text" id="wm_text" placeholder="Welcome to the server, {user}!"></div>
+      <div class="row"><label>Reaction emoji</label><input type="text" id="wm_emoji" placeholder="🎉 or <:name:id>"></div>
+      <div class="row"><label>Welcome image</label><input type="checkbox" id="wm_image"></div>
+      <div class="row"><label>Show member count</label><input type="checkbox" id="wm_count"></div>
+      <div class="row"><label>Goodbye enabled</label><input type="checkbox" id="gb_enabled"></div>
+      <div class="row"><label>Goodbye channel</label><select id="gb_channel"></select></div>
+      <div class="row"><label class="wide">Goodbye message</label>
+        <input type="text" id="gb_text" placeholder="Goodbye, {user}!"></div>
+      <div class="row"><label>Reaction emoji</label><input type="text" id="gb_emoji" placeholder="👋 or <:name:id>"></div>
+      <div class="row"><label>Goodbye image</label><input type="checkbox" id="gb_image"></div>
+      <div class="row"><label>Show member count</label><input type="checkbox" id="gb_count"></div>
+      <p class="muted">Placeholders: <code>{user}</code> mention, <code>{name}</code> name, <code>{server}</code> server, <code>{count}</code> member number.</p>
+      <div class="actions">
+        <button class="btn primary" data-save="welcomer">Save</button>
+        <button class="btn danger" data-clear="welcomer">Reset welcomer</button>
+      </div>
+      <div class="status" id="st_welcomer"></div>
+    </div>
+
     <div class="card">
       <h2>Reaction Roles</h2>
       <p class="hint">Post an embed with reactions that grant roles. You can create as many panels as you want.</p>
@@ -279,6 +305,22 @@ function render() {
   fillSelect($("bo_channel"), textChannels(), s.boost.channel_id, "None");
   fillSelect($("bo_role"), state.roles, s.boost.boost_role_id, "None");
 
+  const wm = s.welcomer || {};
+  const wd = s.welcomer_defaults || {};
+  const wval = (k) => (wm[k] !== undefined ? wm[k] : wd[k]);
+  $("wm_enabled").checked = !!wval("welcome_enabled");
+  fillSelect($("wm_channel"), textChannels(), String(wval("welcome_channel") || ""), "None (auto)");
+  $("wm_text").value = wval("welcome_text") || "";
+  $("wm_emoji").value = wval("welcome_emoji") || "";
+  $("wm_image").checked = !!wval("welcome_image");
+  $("wm_count").checked = !!wval("welcome_member_count");
+  $("gb_enabled").checked = !!wval("goodbye_enabled");
+  fillSelect($("gb_channel"), textChannels(), String(wval("goodbye_channel") || ""), "None (welcome channel)");
+  $("gb_text").value = wval("goodbye_text") || "";
+  $("gb_emoji").value = wval("goodbye_emoji") || "";
+  $("gb_image").checked = !!wval("goodbye_image");
+  $("gb_count").checked = !!wval("goodbye_member_count");
+
   fillSelect($("rr_channel"), textChannels(), "");
   if (!$("rr_rows").children.length) addRrRow();
   renderPanels();
@@ -395,6 +437,19 @@ async function save(section) {
   } else if (section === "boost") {
     data.channel_id = $("bo_channel").value;
     data.boost_role_id = $("bo_role").value;
+  } else if (section === "welcomer") {
+    data.welcome_enabled = $("wm_enabled").checked;
+    data.welcome_channel = $("wm_channel").value;
+    data.welcome_text = $("wm_text").value;
+    data.welcome_emoji = $("wm_emoji").value;
+    data.welcome_image = $("wm_image").checked;
+    data.welcome_member_count = $("wm_count").checked;
+    data.goodbye_enabled = $("gb_enabled").checked;
+    data.goodbye_channel = $("gb_channel").value;
+    data.goodbye_text = $("gb_text").value;
+    data.goodbye_emoji = $("gb_emoji").value;
+    data.goodbye_image = $("gb_image").checked;
+    data.goodbye_member_count = $("gb_count").checked;
   }
   const res = await api("/api/apply", {
     method: "POST",

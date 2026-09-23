@@ -38,6 +38,7 @@ bot._keepalive_started = False
 bot.db = None
 bot.log_channels = {}
 bot.boost_settings = {}
+bot.welcomer_cache = {}
 bot._api_loop = None
 web_server.BOT = bot
 
@@ -162,8 +163,14 @@ def _init_db():
             logging.warning("[db] boost_settings table missing; creating it")
             database.init_schema()
             bot.boost_settings = database.get_all_boost_settings()
+        try:
+            bot.welcomer_cache = database.get_all_welcomer()
+        except Exception as e:
+            logging.warning("[db] failed to load welcomer settings: %s", e)
+            bot.welcomer_cache = {}
         logging.info("[db] loaded %s log channel setting(s)", len(bot.log_channels))
         logging.info("[db] loaded %s boost setting(s)", len(bot.boost_settings))
+        logging.info("[db] loaded %s welcomer setting(s)", len(bot.welcomer_cache))
     except Exception as e:
         logging.error("[db] init failed: %s", e)
         bot.db = None

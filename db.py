@@ -118,6 +118,10 @@ class Database:
             "token TEXT PRIMARY KEY, user_id TEXT, username TEXT, "
             "manageable TEXT NOT NULL DEFAULT '{}', expires BIGINT NOT NULL)"
         )
+        self.execute(
+            "CREATE TABLE IF NOT EXISTS welcomer ("
+            "guild_id BIGINT PRIMARY KEY, settings TEXT NOT NULL DEFAULT '{}')"
+        )
 
     def save_web_session(self, token, user_id, username, manageable, expires):
         self.execute(
@@ -424,6 +428,26 @@ class Database:
                 "INSERT INTO level_rewards (guild_id, level, role_id) VALUES (%s, %s, %s)",
                 (guild_id, level, role_id),
             )
+
+    def get_all_welcomer(self):
+        rows = self.fetchall("SELECT guild_id, settings FROM welcomer")
+        return {int(g): json.loads(s or "{}") for g, s in rows}
+
+    def get_welcomer(self, guild_id):
+        row = self.fetchone("SELECT settings FROM welcomer WHERE guild_id = %s", (guild_id,))
+        if not row:
+            return None
+        return json.loads(row[0] or "{}")
+
+    def set_welcomer(self, guild_id, settings):
+        self.execute(
+            "INSERT INTO welcomer (guild_id, settings) VALUES (%s, %s) "
+            "ON CONFLICT (guild_id) DO UPDATE SET settings = EXCLUDED.settings",
+            (guild_id, json.dumps(settings)),
+        )
+
+    def delete_welcomer(self, guild_id):
+        self.execute("DELETE FROM welcomer WHERE guild_id = %s", (guild_id,))
 
     def get_leveling_leaderboard(self, guild_id, limit=10):
         rows = self.fetchall(

@@ -14,6 +14,8 @@ from pathlib import Path
 
 import discord
 
+import welcomer
+
 BOT = None
 
 SESSIONS = {}
@@ -266,6 +268,8 @@ async def _gather(bot, user, session, guild_id):
                 "channel_id": str(boost.get("channel_id")) if boost.get("channel_id") else None,
                 "boost_role_id": str(boost.get("boost_role_id")) if boost.get("boost_role_id") else None,
             },
+            "welcomer": welcomer.get_welcomer(bot, gid),
+            "welcomer_defaults": welcomer.defaults(),
         },
         "reaction_panels": reaction_panels,
     }
@@ -353,6 +357,11 @@ async def _apply(bot, session, guild_id, section, data):
         if action == "delete":
             return await _apply_reaction_delete(guild, db, data)
         return {"ok": False, "error": "Unknown reaction role action."}
+    elif section == "welcomer":
+        if data.get("reset") or data.get("clear"):
+            welcomer.reset(bot, gid)
+        else:
+            welcomer.apply(bot, gid, data)
     return {"ok": True}
 
 
@@ -660,7 +669,7 @@ a{{color:#8ab4ff;text-decoration:none}}
         guild_id = payload.get("guild") or None
         section = payload.get("section")
         data = payload.get("data") or {}
-        if section not in ("mod_log", "leveling", "rewards", "boost", "reactionrole"):
+        if section not in ("mod_log", "leveling", "rewards", "boost", "reactionrole", "welcomer"):
             self._json(400, {"ok": False, "error": "Unknown section"})
             return
         try:
