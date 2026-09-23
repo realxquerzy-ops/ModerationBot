@@ -264,9 +264,7 @@ class LevelingCog(commands.Cog):
             level, rank, total, into, need, xp, messages,
         )
         file = discord.File(buf, filename="level.png")
-        embed = discord.Embed(color=discord.Color.blue())
-        embed.set_image(url="attachment://level.png")
-        await interaction.followup.send(embed=embed, file=file)
+        await interaction.followup.send(file=file)
 
     @lvl_group.command(name="top", description="View the server level leaderboard")
     async def leveling_top(self, interaction: discord.Interaction):
@@ -350,9 +348,7 @@ class LevelingCog(commands.Cog):
 
         buf = render_leaderboard(entries)
         file = discord.File(buf, filename="leaderboard.png")
-        embed = discord.Embed(title=guild.name, color=discord.Color.blue())
-        embed.set_image(url="attachment://leaderboard.png")
-        await interaction.followup.send(embed=embed, file=file)
+        await interaction.followup.send(content=f"# **{guild.name}**", file=file)
 
     @lvl_group.command(name="settings", description="View this server's leveling settings (Manage Server)")
     async def leveling_settings(self, interaction: discord.Interaction):
