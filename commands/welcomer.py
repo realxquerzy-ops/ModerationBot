@@ -71,6 +71,10 @@ class WelcomerCog(commands.Cog):
     async def _deliver(self, kind, member, accent):
         guild = member.guild
         settings = wc.get_welcomer(self.bot, guild.id)
+        self.log.info("[%s] guild=%s (%s) member=%s enabled=%s cache_ok=%s",
+                      kind, guild.name, guild.id, member.id,
+                      settings.get(f"{kind}_enabled"),
+                      guild.id in getattr(self.bot, "welcomer_cache", {}))
         if not settings.get(f"{kind}_enabled"):
             return
         explicit = settings.get(f"{kind}_channel") or ""
@@ -78,6 +82,9 @@ class WelcomerCog(commands.Cog):
             explicit = settings.get("welcome_channel") or ""
         channel = self._resolve_channel(guild, explicit)
         if channel is None:
+            self.log.warning("[%s] no channel found (explicit=%r text_channels=%d system=%r)",
+                             kind, explicit, len(guild.text_channels),
+                             getattr(guild, "system_channel", None) is not None)
             return
         count = guild.member_count or 0
         text = settings.get(f"{kind}_text") or wc.DEFAULT_WELCOMER[f"{kind}_text"]
@@ -114,6 +121,7 @@ class WelcomerCog(commands.Cog):
         except Exception as e:
             self.log.warning("welcomer send failed (%s): %s", kind, e)
             return
+        self.log.info("[%s] posted to #%s (%s)", kind, channel.name, channel.id)
 
         emoji = settings.get(f"{kind}_emoji") or ""
         if emoji:
