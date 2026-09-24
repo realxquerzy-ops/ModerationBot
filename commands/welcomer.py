@@ -130,6 +130,36 @@ class WelcomerCog(commands.Cog):
             except Exception as e:
                 self.log.warning("welcomer reaction failed (%s): %s", kind, e)
 
+    @discord.app_commands.command(
+        name="welcomer-test",
+        description="Test the welcome/goodbye message setup (admin only)",
+    )
+    @discord.app_commands.choices(
+        kind=[
+            discord.app_commands.Choice(name="Welcome", value="welcome"),
+            discord.app_commands.Choice(name="Goodbye", value="goodbye"),
+        ]
+    )
+    @discord.app_commands.guild_only()
+    async def welcomer_test(self, interaction: discord.Interaction, kind: discord.app_commands.Choice[str]):
+        if not interaction.user.guild_permissions.manage_guild:
+            await interaction.response.send_message(
+                "❌ You need the **Manage Server** permission to use this.", ephemeral=True
+            )
+            return
+        guild = interaction.guild
+        settings = wc.get_welcomer(self.bot, guild.id)
+        enabled = settings.get(f"{kind.value}_enabled")
+        explicit = settings.get(f"{kind.value}_channel") or ""
+        channel = self._resolve_channel(guild, explicit)
+        await interaction.response.defer(ephemeral=True)
+        await self._deliver(kind.value, interaction.user, WELCOME_ACCENT if kind.value == "welcome" else GOODBYE_ACCENT)
+        desc = (
+            f"Enabled: {enabled} · Channel: {channel.mention if channel else 'none'}"
+            f" · Cache ids: {list(getattr(self.bot, 'welcomer_cache', {}).keys())}"
+        )
+        await interaction.followup.send(f"✅ Test fired for **{kind.label}**.\n{desc}", ephemeral=True)
+
     @commands.Cog.listener()
     async def on_member_join(self, member):
         if getattr(member, "bot", False) or member.guild is None:
