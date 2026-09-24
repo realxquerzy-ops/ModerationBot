@@ -12,12 +12,11 @@ WELCOME_ACCENT = (88, 101, 242)
 GOODBYE_ACCENT = (240, 90, 90)
 
 
-welcomer_group = discord.app_commands.Group(
-    name="welcomer", description="Welcome/goodbye messages on join/leave"
-)
-
-
 class WelcomerCog(commands.Cog):
+    welcomer_group = discord.app_commands.Group(
+        name="welcomer", description="Welcome/goodbye messages on join/leave"
+    )
+
     def __init__(self, bot):
         self.bot = bot
         self.log = logging.getLogger("modbot.welcomer")
