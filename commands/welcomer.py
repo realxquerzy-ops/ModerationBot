@@ -145,24 +145,26 @@ class WelcomerCog(commands.Cog):
         ]
     )
     @discord.app_commands.guild_only()
-    async def welcomer_test(self, interaction: discord.Interaction, kind: discord.app_commands.Choice[str]):
+    async def welcomer_test(self, interaction: discord.Interaction, kind: str):
         if not interaction.user.guild_permissions.manage_guild:
             await interaction.response.send_message(
                 "❌ You need the **Manage Server** permission to use this.", ephemeral=True
             )
             return
+        kind_val = kind.value if isinstance(kind, discord.app_commands.Choice) else kind
+        label = kind.name if isinstance(kind, discord.app_commands.Choice) else kind
         guild = interaction.guild
         settings = wc.get_welcomer(self.bot, guild.id)
-        enabled = settings.get(f"{kind.value}_enabled")
-        explicit = settings.get(f"{kind.value}_channel") or ""
+        enabled = settings.get(f"{kind_val}_enabled")
+        explicit = settings.get(f"{kind_val}_channel") or ""
         channel = self._resolve_channel(guild, explicit)
         await interaction.response.defer(ephemeral=True)
-        await self._deliver(kind.value, interaction.user, WELCOME_ACCENT if kind.value == "welcome" else GOODBYE_ACCENT)
+        await self._deliver(kind_val, interaction.user, WELCOME_ACCENT if kind_val == "welcome" else GOODBYE_ACCENT)
         desc = (
             f"Enabled: {enabled} · Channel: {channel.mention if channel else 'none'}"
             f" · Cache ids: {list(getattr(self.bot, 'welcomer_cache', {}).keys())}"
         )
-        await interaction.followup.send(f"✅ Test fired for **{kind.label}**.\n{desc}", ephemeral=True)
+        await interaction.followup.send(f"✅ Test fired for **{label}**.\n{desc}", ephemeral=True)
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
