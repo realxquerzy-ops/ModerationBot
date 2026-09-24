@@ -122,6 +122,18 @@ class Database:
             "CREATE TABLE IF NOT EXISTS welcomer ("
             "guild_id BIGINT PRIMARY KEY, settings TEXT NOT NULL DEFAULT '{}')"
         )
+        self.execute(
+            "CREATE TABLE IF NOT EXISTS xp_boost_channels ("
+            "guild_id BIGINT NOT NULL, channel_id BIGINT NOT NULL, "
+            "multiplier DOUBLE PRECISION NOT NULL DEFAULT 1.0, "
+            "PRIMARY KEY (guild_id, channel_id))"
+        )
+        self.execute(
+            "CREATE TABLE IF NOT EXISTS xp_boost_roles ("
+            "guild_id BIGINT NOT NULL, role_id BIGINT NOT NULL, "
+            "multiplier DOUBLE PRECISION NOT NULL DEFAULT 1.0, "
+            "PRIMARY KEY (guild_id, role_id))"
+        )
 
     def save_web_session(self, token, user_id, username, manageable, expires):
         self.execute(
@@ -448,6 +460,44 @@ class Database:
 
     def delete_welcomer(self, guild_id):
         self.execute("DELETE FROM welcomer WHERE guild_id = %s", (guild_id,))
+
+    def get_all_xp_boosts(self):
+        channels = self.fetchall("SELECT guild_id, channel_id, multiplier FROM xp_boost_channels")
+        roles = self.fetchall("SELECT guild_id, role_id, multiplier FROM xp_boost_roles")
+        out = {}
+        for g, c, m in channels:
+            out.setdefault(int(g), {"channels": {}, "roles": {}})["channels"][int(c)] = float(m)
+        for g, r, m in roles:
+            out.setdefault(int(g), {"channels": {}, "roles": {}})["roles"][int(r)] = float(m)
+        return out
+
+    def get_xp_boost(self, guild_id):
+        channels = self.fetchall(
+            "SELECT channel_id, multiplier FROM xp_boost_channels WHERE guild_id = %s", (guild_id,)
+        )
+        roles = self.fetchall(
+            "SELECT role_id, multiplier FROM xp_boost_roles WHERE guild_id = %s", (guild_id,)
+        )
+        return {
+            "channels": {int(c): float(m) for c, m in channels},
+            "roles": {int(r): float(m) for r, m in roles},
+        }
+
+    def save_xp_boost_channels(self, guild_id, mapping):
+        self.execute("DELETE FROM xp_boost_channels WHERE guild_id = %s", (guild_id,))
+        for cid, mult in mapping.items():
+            self.execute(
+                "INSERT INTO xp_boost_channels (guild_id, channel_id, multiplier) VALUES (%s, %s, %s)",
+                (guild_id, int(cid), float(mult)),
+            )
+
+    def save_xp_boost_roles(self, guild_id, mapping):
+        self.execute("DELETE FROM xp_boost_roles WHERE guild_id = %s", (guild_id,))
+        for rid, mult in mapping.items():
+            self.execute(
+                "INSERT INTO xp_boost_roles (guild_id, role_id, multiplier) VALUES (%s, %s, %s)",
+                (guild_id, int(rid), float(mult)),
+            )
 
     def get_leveling_leaderboard(self, guild_id, limit=10):
         rows = self.fetchall(

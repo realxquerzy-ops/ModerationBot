@@ -39,6 +39,22 @@ class LevelingCog(commands.Cog):
             need = self.xp_for_level(level)
         return level, remaining, need
 
+    def _boost_mult(self, guild_id, member, channel):
+        boosts = getattr(self.bot, "xp_boosts", {}).get(guild_id)
+        if not boosts:
+            return 1.0
+        mult = 1.0
+        cid = channel.id if channel is not None else None
+        if cid is not None:
+            cm = boosts.get("channels", {}).get(cid)
+            if cm is not None:
+                mult *= cm
+        for role in member.roles:
+            rm = boosts.get("roles", {}).get(role.id)
+            if rm is not None:
+                mult *= rm
+        return max(0.0, mult)
+
     async def add_xp(self, guild_id, user_id, amount, messages=0, voice_minutes=0, channel=None):
         rec = self.bot.db.get_leveling(guild_id, user_id)
         if rec is None:
@@ -115,9 +131,11 @@ class LevelingCog(commands.Cog):
         self.last_message_xp[key] = now
 
         try:
+            mult = self._boost_mult(message.guild.id, message.author, message.channel)
+            amount = round(settings["xp_per_message"] * mult)
             await self.add_xp(
                 message.guild.id, message.author.id,
-                settings["xp_per_message"], messages=1, channel=message.channel,
+                amount, messages=1, channel=message.channel,
             )
         except Exception as e:
             print(f"[leveling] on_message error: {e}")
@@ -143,9 +161,11 @@ class LevelingCog(commands.Cog):
             minutes = int((time.time() - start) // 60)
             if minutes > 0:
                 try:
+                    mult = self._boost_mult(member.guild.id, member, before.channel)
+                    amount = round(minutes * settings["xp_per_voice"] * mult)
                     await self.add_xp(
                         member.guild.id, member.id,
-                        minutes * settings["xp_per_voice"], voice_minutes=minutes, channel=None,
+                        amount, voice_minutes=minutes, channel=None,
                     )
                 except Exception as e:
                     print(f"[leveling] voice xp error: {e}")

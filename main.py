@@ -39,6 +39,7 @@ bot.db = None
 bot.log_channels = {}
 bot.boost_settings = {}
 bot.welcomer_cache = {}
+bot.xp_boosts = {}
 bot._api_loop = None
 web_server.BOT = bot
 
@@ -168,9 +169,15 @@ def _init_db():
         except Exception as e:
             logging.warning("[db] failed to load welcomer settings: %s", e)
             bot.welcomer_cache = {}
+        try:
+            bot.xp_boosts = database.get_all_xp_boosts()
+        except Exception as e:
+            logging.warning("[db] failed to load xp boosts: %s", e)
+            bot.xp_boosts = {}
         logging.info("[db] loaded %s log channel setting(s)", len(bot.log_channels))
         logging.info("[db] loaded %s boost setting(s)", len(bot.boost_settings))
         logging.info("[db] loaded %s welcomer setting(s)", len(bot.welcomer_cache))
+        logging.info("[db] loaded %s xp boost guild(s)", len(bot.xp_boosts))
     except Exception as e:
         logging.error("[db] init failed: %s", e)
         bot.db = None

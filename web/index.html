@@ -115,6 +115,22 @@
     </div>
 
     <div class="card">
+      <h2>XP Boosters</h2>
+      <p class="hint">Multiply XP earned in specific channels or by members holding specific roles. <b>No XP</b> = 0× (they gain none). Boosts stack: final XP = base × channel × each role.</p>
+      <h3 style="margin:14px 0 6px;font-size:15px">Channel boosts</h3>
+      <div id="xb_channels"></div>
+      <div class="actions"><button class="btn" id="xb_addChannel">Add channel</button></div>
+      <h3 style="margin:14px 0 6px;font-size:15px">Role boosts</h3>
+      <div id="xb_roles"></div>
+      <div class="actions">
+        <button class="btn" id="xb_addRole">Add role</button>
+        <button class="btn primary" data-save="xp_boost">Save</button>
+        <button class="btn danger" data-clear="xp_boost">Reset</button>
+      </div>
+      <div class="status" id="st_xp_boost"></div>
+    </div>
+
+    <div class="card">
       <h2>Server Boosts</h2>
       <p class="hint">The boost panel channel and the shown boost role.</p>
       <div class="row"><label>Boost channel</label><select id="bo_channel"></select></div>
@@ -170,6 +186,7 @@
 
 <script>
 const REWARD_LEVELS = [5, 10, 25, 35, 50, 75, 100];
+const XB_MULTS = [[0, "No XP"], [0.25, "×0.25"], [0.5, "×0.5"], [0.75, "×0.75"], [1, "×1 (normal)"], [1.25, "×1.25"], [1.5, "×1.5"], [2, "×2"], [3, "×3"], [5, "×5"]];
 let state = null;
 let rewardDirty = false;
 let lastGuildId = null;
@@ -322,6 +339,7 @@ function render() {
   $("gb_count").checked = !!wval("goodbye_member_count");
 
   fillSelect($("rr_channel"), textChannels(), "");
+  buildXbRows();
   if (!$("rr_rows").children.length) addRrRow();
   renderPanels();
 }
@@ -341,6 +359,41 @@ function addRrRow(emojiVal, roleVal) {
   rm.addEventListener("click", () => wrap.remove());
   wrap.append(emo, sel, rm);
   $("rr_rows").appendChild(wrap);
+}
+
+function addXbRow(el, id, mult, isRole) {
+  const wrap = document.createElement("div");
+  wrap.className = "rr-row";
+  const sel = document.createElement("select");
+  fillSelect(sel, isRole ? state.roles : textChannels(), id || "", isRole ? "Pick role" : "Pick channel");
+  const ms = document.createElement("select");
+  for (const [v, label] of XB_MULTS) {
+    const o = document.createElement("option");
+    o.value = String(v);
+    o.textContent = label;
+    ms.appendChild(o);
+  }
+  ms.value = mult === undefined || mult === null ? "1" : String(mult);
+  const rm = document.createElement("button");
+  rm.className = "btn mini";
+  rm.textContent = "X";
+  rm.addEventListener("click", () => wrap.remove());
+  wrap.append(sel, ms, rm);
+  el.appendChild(wrap);
+}
+
+function buildXbRows() {
+  const xb = state.settings.xp_boost || { channels: {}, roles: {} };
+  const cEl = $("xb_channels");
+  cEl.innerHTML = "";
+  const cEntries = Object.entries(xb.channels || {});
+  for (const [cid, mult] of cEntries) addXbRow(cEl, cid, mult, false);
+  if (!cEntries.length) addXbRow(cEl, "", 1, false);
+  const rEl = $("xb_roles");
+  rEl.innerHTML = "";
+  const rEntries = Object.entries(xb.roles || {});
+  for (const [rid, mult] of rEntries) addXbRow(rEl, rid, mult, true);
+  if (!rEntries.length) addXbRow(rEl, "", 1, true);
 }
 
 function renderPanels() {
@@ -450,6 +503,19 @@ async function save(section) {
     data.goodbye_emoji = $("gb_emoji").value;
     data.goodbye_image = $("gb_image").checked;
     data.goodbye_member_count = $("gb_count").checked;
+  } else if (section === "xp_boost") {
+    const channels = {};
+    document.querySelectorAll("#xb_channels .rr-row").forEach(row => {
+      const sels = row.querySelectorAll("select");
+      if (sels[0].value) channels[sels[0].value] = parseFloat(sels[1].value);
+    });
+    const roles = {};
+    document.querySelectorAll("#xb_roles .rr-row").forEach(row => {
+      const sels = row.querySelectorAll("select");
+      if (sels[0].value) roles[sels[0].value] = parseFloat(sels[1].value);
+    });
+    data.channels = channels;
+    data.roles = roles;
   }
   const res = await api("/api/apply", {
     method: "POST",
@@ -500,6 +566,10 @@ $("serverSel").addEventListener("change", () => {
 $("rr_addRow").addEventListener("click", () => addRrRow());
 
 $("rl_add").addEventListener("click", () => addRewardLevelRow());
+
+$("xb_addChannel").addEventListener("click", () => addXbRow($("xb_channels"), "", 1, false));
+
+$("xb_addRole").addEventListener("click", () => addXbRow($("xb_roles"), "", 1, true));
 
 $("rr_create").addEventListener("click", async () => {
   const rows = [];

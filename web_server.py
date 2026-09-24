@@ -78,6 +78,13 @@ def _partial_emoji(token: str):
     return token
 
 
+def xp_boost_to_json(boost):
+    return {
+        "channels": {str(c): float(m) for c, m in boost.get("channels", {}).items()},
+        "roles": {str(r): float(m) for r, m in boost.get("roles", {}).items()},
+    }
+
+
 def _emoji_display(token: str) -> str:
     if token.startswith("custom:"):
         _, eid, name, anim = token.split(":", 3)
@@ -270,6 +277,7 @@ async def _gather(bot, user, session, guild_id):
             },
             "welcomer": welcomer.get_welcomer(bot, gid),
             "welcomer_defaults": welcomer.defaults(),
+            "xp_boost": xp_boost_to_json(db.get_xp_boost(gid)),
         },
         "reaction_panels": reaction_panels,
     }
@@ -362,6 +370,27 @@ async def _apply(bot, session, guild_id, section, data):
             welcomer.reset(bot, gid)
         else:
             welcomer.apply(bot, gid, data)
+    elif section == "xp_boost":
+        channels = {}
+        roles = {}
+        if not data.get("clear"):
+            for cid, mult in (data.get("channels") or {}).items():
+                try:
+                    m = float(mult)
+                except (TypeError, ValueError):
+                    continue
+                if m >= 0 and m != 1.0:
+                    channels[int(cid)] = m
+            for rid, mult in (data.get("roles") or {}).items():
+                try:
+                    m = float(mult)
+                except (TypeError, ValueError):
+                    continue
+                if m >= 0 and m != 1.0:
+                    roles[int(rid)] = m
+        db.save_xp_boost_channels(gid, channels)
+        db.save_xp_boost_roles(gid, roles)
+        getattr(bot, "xp_boosts", {})[gid] = {"channels": channels, "roles": roles}
     return {"ok": True}
 
 
@@ -669,7 +698,7 @@ a{{color:#8ab4ff;text-decoration:none}}
         guild_id = payload.get("guild") or None
         section = payload.get("section")
         data = payload.get("data") or {}
-        if section not in ("mod_log", "leveling", "rewards", "boost", "reactionrole", "welcomer"):
+        if section not in ("mod_log", "leveling", "rewards", "boost", "reactionrole", "welcomer", "xp_boost"):
             self._json(400, {"ok": False, "error": "Unknown section"})
             return
         try:
