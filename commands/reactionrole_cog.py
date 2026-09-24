@@ -216,6 +216,67 @@ class ReactionRoleCog(commands.Cog):
             ephemeral=True,
         )
 
+    @rr.command(name="repair", description="Delete reaction messages in panel channels that have no saved bindings (orphaned).")
+    @app_commands.guild_only()
+    async def rr_repair(self, interaction: discord.Interaction):
+        if not self._require_manage(interaction):
+            await interaction.response.send_message(
+                "❌ You need **Manage Server** permission.", ephemeral=True
+            )
+            return
+        if self.bot.db is None:
+            await interaction.response.send_message(
+                "❌ Database is not configured.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+
+        bindings = self.bot.db.get_reaction_roles(guild.id)
+        known = {(b["channel_id"], b["message_id"]) for b in bindings}
+        channels = sorted({b["channel_id"] for b in bindings})
+
+        scanned = 0
+        kept = 0
+        orphans = []
+        for cid in channels:
+            channel = guild.get_channel(cid)
+            if not isinstance(channel, discord.TextChannel):
+                continue
+            try:
+                async for msg in channel.history(limit=200):
+                    if not msg.reactions:
+                        continue
+                    scanned += 1
+                    if (cid, msg.id) in known:
+                        kept += 1
+                        continue
+                    orphans.append(msg)
+            except Exception as e:
+                self.log.warning("repair scan failed in %s: %s", cid, e)
+
+        deleted = []
+        failed = []
+        for msg in orphans:
+            try:
+                await msg.delete()
+                deleted.append(msg.id)
+            except Exception as e:
+                failed.append((msg.id, str(e)))
+
+        lines = [f"Scanned {scanned} reaction message(s) in {len(channels)} panel channel(s)."]
+        if kept:
+            lines.append(f"Kept {kept} message(s) with saved bindings.")
+        if deleted:
+            lines.append(f"Deleted {len(deleted)} orphan(s): {', '.join(str(mid) for mid in deleted)}.")
+        if failed:
+            lines.append("Failed to delete: " + "; ".join(f"{mid} ({err})" for mid, err in failed))
+        if not deleted and not failed:
+            lines.append("Nothing to clean up.")
+        await interaction.followup.send(
+            "🧹 **Reaction role repair**\n" + "\n".join(lines), ephemeral=True
+        )
+
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
         if payload.user_id == self.bot.user.id:
