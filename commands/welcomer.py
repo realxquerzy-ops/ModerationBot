@@ -12,6 +12,11 @@ WELCOME_ACCENT = (88, 101, 242)
 GOODBYE_ACCENT = (240, 90, 90)
 
 
+welcomer_group = discord.app_commands.Group(
+    name="welcomer", description="Welcome/goodbye messages on join/leave"
+)
+
+
 class WelcomerCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -130,9 +135,9 @@ class WelcomerCog(commands.Cog):
             except Exception as e:
                 self.log.warning("welcomer reaction failed (%s): %s", kind, e)
 
-    @discord.app_commands.command(
-        name="welcomer-test",
-        description="Test the welcome/goodbye message setup (admin only)",
+    @welcomer_group.command(
+        name="test",
+        description="Test the welcome/goodbye message setup (Manage Server)",
     )
     @discord.app_commands.choices(
         kind=[

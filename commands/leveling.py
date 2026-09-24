@@ -266,6 +266,59 @@ class LevelingCog(commands.Cog):
         file = discord.File(buf, filename="level.png")
         await interaction.followup.send(file=file)
 
+    @lvl_group.command(name="test", description="Test the level up message and level card (Manage Server)")
+    async def leveling_test(self, interaction: discord.Interaction):
+        if not self._is_admin(interaction):
+            await interaction.response.send_message(
+                "❌ You need the **Manage Server** permission to use this.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        settings = self.bot.db.get_level_settings(guild.id)
+        member = interaction.user
+
+        rec = self.bot.db.get_leveling(guild.id, member.id)
+        if rec is None:
+            level, into, need = 1, 0, self.xp_for_level(1)
+            xp, messages = 0, 0
+        else:
+            xp, messages = rec["xp"], rec["total_messages"]
+            level, into, need = self.level_progress(xp)
+
+        text = settings["levelup_text"] or "🎉 {user} leveled up to **Level {level}** in {server}!"
+        formatted = (
+            text.replace("{user}", member.mention)
+            .replace("{level}", str(level))
+            .replace("{server}", guild.name)
+        )
+
+        target = guild.get_channel(settings["announce_channel"]) if settings["announce_channel"] else interaction.channel
+        where = f"<#{target.id}>" if target else "`no channel`"
+        posted = False
+        if target is not None:
+            try:
+                await target.send(formatted)
+                posted = True
+            except Exception as e:
+                where = f"send failed: {e}"
+
+        rank, total = self.bot.db.get_leveling_rank(guild.id, member.id)
+        avatar = await self._avatar_pil(member)
+        buf = render_level_card(
+            member.display_name, guild.name, avatar,
+            level, rank, total, into, need, int(xp), messages,
+        )
+        file = discord.File(buf, filename="level.png")
+
+        embed = discord.Embed(title="🧪 Leveling test", color=discord.Color.blurple())
+        embed.add_field(name="✅ Enabled", value="Yes" if settings["enabled"] else "No", inline=True)
+        embed.add_field(name="📣 Announce channel", value=where, inline=True)
+        embed.add_field(name="💬 Message sent", value="Yes" if posted else "No", inline=True)
+        embed.add_field(name="🧑 Level", value=f"Level {level} (`{int(xp)} XP`)", inline=True)
+        embed.add_field(name="💬 Level up text", value=f"`{text}`", inline=False)
+        await interaction.followup.send(embed=embed, file=file, ephemeral=True)
+
     @lvl_group.command(name="top", description="View the server level leaderboard")
     async def leveling_top(self, interaction: discord.Interaction):
         await interaction.response.defer()
