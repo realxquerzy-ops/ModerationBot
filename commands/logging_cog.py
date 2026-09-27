@@ -110,7 +110,10 @@ class LoggingCog(commands.Cog):
         if channel is None:
             return
         try:
-            await channel.send(embed=embed)
+            await channel.send(
+                embed=embed,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
         except Exception as e:
             self.log.warning("failed to send log: %s", e)
 

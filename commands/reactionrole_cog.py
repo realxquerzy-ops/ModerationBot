@@ -85,6 +85,20 @@ class ReactionRoleCog(commands.Cog):
             warnings.append("The role is higher than my highest role, so I cannot assign it.")
         return " ".join(warnings)
 
+    def _can_manage_role(self, interaction, role) -> str:
+        """Return an error string if the actor cannot safely bind `role` in this guild."""
+        member = interaction.user
+        if getattr(member, "guild", None) is None:
+            return None
+        perms = member.guild_permissions
+        if perms.administrator or member.id == member.guild.owner_id:
+            return None
+        if not perms.manage_roles:
+            return "You need **Manage Roles** permission to bind roles, and the role must be lower than your highest role."
+        if role >= member.top_role:
+            return "You can only bind roles that are **below your highest role**."
+        return None
+
     rr = app_commands.Group(
         name="reactionrole", description="Set up reaction role messages."
     )
@@ -108,6 +122,12 @@ class ReactionRoleCog(commands.Cog):
         if not self._require_manage(interaction):
             await interaction.response.send_message(
                 "❌ You need **Manage Server** permission.", ephemeral=True
+            )
+            return
+        hierarchy_error = self._can_manage_role(interaction, role)
+        if hierarchy_error:
+            await interaction.response.send_message(
+                f"❌ {hierarchy_error}", ephemeral=True
             )
             return
         await interaction.response.defer(ephemeral=True)
@@ -163,6 +183,12 @@ class ReactionRoleCog(commands.Cog):
         if not self._require_manage(interaction):
             await interaction.response.send_message(
                 "❌ You need **Manage Server** permission.", ephemeral=True
+            )
+            return
+        hierarchy_error = self._can_manage_role(interaction, role)
+        if hierarchy_error:
+            await interaction.response.send_message(
+                f"❌ {hierarchy_error}", ephemeral=True
             )
             return
         await interaction.response.defer(ephemeral=True)

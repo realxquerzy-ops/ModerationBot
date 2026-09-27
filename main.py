@@ -5,6 +5,7 @@ import sys
 
 import aiohttp
 import discord
+import psycopg2
 from discord.ext import commands
 
 from db import Database
