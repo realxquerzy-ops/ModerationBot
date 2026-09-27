@@ -151,6 +151,7 @@
       <div class="row"><label>Reaction emoji</label><input type="text" id="wm_emoji" placeholder="🎉 or <:name:id>"></div>
       <div class="row"><label>Welcome image</label><input type="checkbox" id="wm_image"></div>
       <div class="row"><label>Show member count</label><input type="checkbox" id="wm_count"></div>
+      <div class="row"><label>Auto role on join</label><select id="wm_joinRole"></select></div>
       <div class="row"><label>Goodbye enabled</label><input type="checkbox" id="gb_enabled"></div>
       <div class="row"><label>Goodbye channel</label><select id="gb_channel"></select></div>
       <div class="row"><label class="wide">Goodbye message</label>
@@ -331,6 +332,7 @@ function render() {
   $("wm_emoji").value = wval("welcome_emoji") || "";
   $("wm_image").checked = !!wval("welcome_image");
   $("wm_count").checked = !!wval("welcome_member_count");
+  fillSelect($("wm_joinRole"), state.roles, String(wval("welcome_role") || ""), "None");
   $("gb_enabled").checked = !!wval("goodbye_enabled");
   fillSelect($("gb_channel"), textChannels(), String(wval("goodbye_channel") || ""), "None (welcome channel)");
   $("gb_text").value = wval("goodbye_text") || "";
@@ -497,6 +499,7 @@ async function save(section) {
     data.welcome_emoji = $("wm_emoji").value;
     data.welcome_image = $("wm_image").checked;
     data.welcome_member_count = $("wm_count").checked;
+    data.welcome_role = $("wm_joinRole").value;
     data.goodbye_enabled = $("gb_enabled").checked;
     data.goodbye_channel = $("gb_channel").value;
     data.goodbye_text = $("gb_text").value;

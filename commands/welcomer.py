@@ -170,6 +170,16 @@ class WelcomerCog(commands.Cog):
     async def on_member_join(self, member):
         if getattr(member, "bot", False) or member.guild is None:
             return
+        settings = wc.get_welcomer(self.bot, member.guild.id)
+        role_id = settings.get("welcome_role") or ""
+        if role_id:
+            try:
+                role = member.guild.get_role(int(role_id))
+                if role is not None and role not in member.roles:
+                    await member.add_roles(role, reason="Welcome: auto role on join")
+                    self.log.info("[welcome-role] assigned %s to %s", role.name, member.id)
+            except Exception as e:
+                self.log.warning("[welcome-role] assign failed for %s: %s", member.id, e)
         await self._deliver("welcome", member, WELCOME_ACCENT)
 
     @commands.Cog.listener()
