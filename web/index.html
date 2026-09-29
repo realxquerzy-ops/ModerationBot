@@ -87,6 +87,26 @@
     </div>
 
     <div class="card">
+      <h2>Bot Name</h2>
+      <p class="hint">Give this bot a custom name and picture here, only in this server. Discord still shows the <b>BOT</b> tag, so nobody mistakes it for a real person.</p>
+      <div class="row"><label>Global name</label><span id="bn_globalName"></span></div>
+      <div class="row"><label>Name here</label><input type="text" id="bn_name" maxlength="32" placeholder="Leave empty to keep the global name"></div>
+      <div class="actions">
+        <button class="btn primary" id="bn_setName">Save name</button>
+        <button class="btn" id="bn_resetName">Reset name</button>
+      </div>
+      <div class="row" style="margin-top:14px"><label>Picture</label><img id="bn_pic" alt="" style="width:48px;height:48px;border-radius:50%;background:#16171f"></div>
+      <div class="row"><label>Upload picture</label><input type="file" id="bn_file" accept="image/*" style="min-width:0"></div>
+      <div class="actions">
+        <button class="btn primary" id="bn_setPic">Save picture</button>
+        <button class="btn" id="bn_resetPic">Reset picture</button>
+        <button class="btn danger" id="bn_resetAll">Reset both</button>
+      </div>
+      <p class="muted" id="bn_note"></p>
+      <div class="status" id="st_bot_identity"></div>
+    </div>
+
+    <div class="card">
       <h2>Leveling</h2>
       <p class="hint">Earn XP from chat and voice. Level ups grant role rewards.</p>
       <div class="row"><label>Enabled</label><input type="checkbox" id="lv_enabled"></div>
@@ -344,6 +364,31 @@ function render() {
   buildXbRows();
   if (!$("rr_rows").children.length) addRrRow();
   renderPanels();
+  renderBotName();
+}
+
+function renderBotName() {
+  const bn = state.bot_identity || {};
+  $("bn_globalName").textContent = bn.global_name || "";
+  $("bn_pic").src = bn.global_avatar || "";
+  $("bn_name").value = bn.custom_nick || "";
+  $("bn_note").textContent = bn.can_manage === false
+    ? "⚠ The bot is missing the Manage Nicknames permission here, so saving may fail."
+    : "";
+}
+
+async function applyIdentity(data) {
+  setStatus("st_bot_identity", "Saving…", true);
+  try {
+    await api("/api/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ section: "bot_identity", data, guild: state.guild.id }),
+    });
+    $("bn_file").value = "";
+    await load(state.guild.id);
+    setStatus("st_bot_identity", "Saved ✓", true);
+  } catch (e) { setStatus("st_bot_identity", "Error: " + e.message, false); }
 }
 
 function addRrRow(emojiVal, roleVal) {
@@ -573,6 +618,27 @@ $("rl_add").addEventListener("click", () => addRewardLevelRow());
 $("xb_addChannel").addEventListener("click", () => addXbRow($("xb_channels"), "", 1, false));
 
 $("xb_addRole").addEventListener("click", () => addXbRow($("xb_roles"), "", 1, true));
+
+$("bn_setName").addEventListener("click", () => applyIdentity({ action: "set_name", name: $("bn_name").value.trim() }));
+
+$("bn_resetName").addEventListener("click", () => applyIdentity({ action: "reset", what: "name" }));
+
+$("bn_setPic").addEventListener("click", () => {
+  const file = $("bn_file").files[0];
+  if (!file) { setStatus("st_bot_identity", "Pick an image first.", false); return; }
+  if (file.size > 1048576) { setStatus("st_bot_identity", "Image too large (max 1 MB).", false); return; }
+  const reader = new FileReader();
+  reader.onload = () => applyIdentity({ action: "set_picture", picture_b64: reader.result });
+  reader.onerror = () => setStatus("st_bot_identity", "Could not read that image.", false);
+  reader.readAsDataURL(file);
+});
+
+$("bn_resetPic").addEventListener("click", () => applyIdentity({ action: "reset", what: "picture" }));
+
+$("bn_resetAll").addEventListener("click", () => {
+  if (!confirm("Reset the bot's custom name and picture in this server?")) return;
+  applyIdentity({ action: "reset", what: "all" });
+});
 
 $("rr_create").addEventListener("click", async () => {
   const rows = [];

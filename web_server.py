@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -15,6 +16,8 @@ from pathlib import Path
 import discord
 
 import welcomer
+
+from identity_utils import MAX_AVATAR_BYTES, decode_avatar, validate_nick
 
 BOT = None
 
@@ -119,6 +122,14 @@ def _run_on_loop(coro):
         return {"ok": False, "error": "Bot is still starting up. Try again in a few seconds."}
     future = asyncio.run_coroutine_threadsafe(coro, loop)
     return future.result(timeout=30)
+
+
+async def _global_avatar_bytes(bot):
+    asset = bot.user.avatar or bot.user.default_avatar
+    try:
+        return await asset.read()
+    except Exception:
+        return None
 
 
 def _discord_get(endpoint, token):
@@ -251,6 +262,7 @@ async def _gather(bot, user, session, guild_id):
                 "guild_id": str(gid),
             })
         )
+    identity = db.get_bot_identity(gid) or {}
     return {
         "ok": True,
         "guilds": [{"id": str(g.id), "name": g.name} for g in _available_guilds(bot, session)],
@@ -280,6 +292,13 @@ async def _gather(bot, user, session, guild_id):
             "xp_boost": xp_boost_to_json(db.get_xp_boost(gid)),
         },
         "reaction_panels": reaction_panels,
+        "bot_identity": {
+            "global_name": bot.user.name,
+            "global_avatar": bot.user.display_avatar.url,
+            "can_manage": bool(guild.me and guild.me.guild_permissions.manage_nicknames),
+            "custom_nick": identity.get("nick"),
+            "custom_avatar": bool(identity.get("avatar")),
+        },
     }
 
 
@@ -370,6 +389,8 @@ async def _apply(bot, session, guild_id, section, data):
             welcomer.reset(bot, gid)
         else:
             welcomer.apply(bot, gid, data)
+    elif section == "bot_identity":
+        return await _apply_bot_identity(bot, guild, db, gid, session, data)
     elif section == "xp_boost":
         channels = {}
         roles = {}
@@ -391,6 +412,92 @@ async def _apply(bot, session, guild_id, section, data):
         db.save_xp_boost_channels(gid, channels)
         db.save_xp_boost_roles(gid, roles)
         getattr(bot, "xp_boosts", {})[gid] = {"channels": channels, "roles": roles}
+    return {"ok": True}
+
+
+async def _apply_bot_identity(bot, guild, db, gid, session, data):
+    me = guild.me
+    if me is None:
+        return {"ok": False, "error": "Could not find the bot in this server."}
+    if not me.guild_permissions.manage_nicknames:
+        return {"ok": False, "error": "The bot needs the **Manage Nicknames** permission here to change its own name or picture."}
+    current = db.get_bot_identity(gid) or {}
+    uid = session.get("user", {}).get("id")
+    set_by = int(uid) if uid else None
+    action = data.get("action")
+
+    if action == "set_name":
+        name = (data.get("name") or "").strip()
+        err = validate_nick(name)
+        if err:
+            return {"ok": False, "error": err}
+        try:
+            await me.edit(nick=name)
+        except discord.Forbidden:
+            return {"ok": False, "error": "The bot couldn't change its name — missing **Manage Nicknames** permission."}
+        except Exception as e:
+            return {"ok": False, "error": f"Could not change the name: {e}"}
+        nick, avatar = name, current.get("avatar")
+    elif action == "set_picture":
+        img = decode_avatar(data.get("picture_b64"))
+        if not img:
+            return {"ok": False, "error": "Could not read that image. Upload a PNG/JPG/GIF under 1 MB."}
+        if len(img) > MAX_AVATAR_BYTES:
+            return {"ok": False, "error": f"That image is too large ({len(img):,} bytes). Keep it under **1 MB**."}
+        try:
+            await me.edit(avatar=img)
+        except discord.Forbidden:
+            return {"ok": False, "error": "The bot couldn't change its picture — missing permission."}
+        except Exception as e:
+            return {"ok": False, "error": f"Could not set the picture: {e}"}
+        nick, avatar = current.get("nick"), base64.b64encode(img).decode("ascii")
+    elif action == "reset":
+        what = data.get("what") or "all"
+        if what not in ("name", "picture", "all"):
+            return {"ok": False, "error": "Unknown reset target."}
+        has_nick = current.get("nick") is not None
+        has_pic = bool(current.get("avatar"))
+        if what == "all":
+            target_has = has_nick or has_pic
+        elif what == "name":
+            target_has = has_nick
+        else:
+            target_has = has_pic
+        if not target_has:
+            return {"ok": False, "error": "There is nothing customized to reset in this server."}
+        kwargs = {}
+        if what in ("name", "all") and has_nick:
+            kwargs["nick"] = None
+        if what in ("picture", "all") and has_pic:
+            global_avatar = await _global_avatar_bytes(bot)
+            if global_avatar:
+                kwargs["avatar"] = global_avatar
+        try:
+            await me.edit(**kwargs)
+        except discord.Forbidden:
+            return {"ok": False, "error": "The bot couldn't reset its name/picture — missing **Manage Nicknames** permission."}
+        except Exception as e:
+            return {"ok": False, "error": f"Could not reset: {e}"}
+        nick = None if what in ("name", "all") else current.get("nick")
+        avatar = None if what in ("picture", "all") else current.get("avatar")
+    else:
+        return {"ok": False, "error": "Unknown action."}
+
+    cog = bot.get_cog("BotIdentityCog")
+    if nick is None and avatar is None:
+        try:
+            db.delete_bot_identity(gid)
+        except Exception as e:
+            log.warning("bot name delete via web failed: %s", e)
+        if cog is not None:
+            cog.identities.pop(gid, None)
+    else:
+        try:
+            db.set_bot_identity(gid, nick, avatar, set_by)
+        except Exception as e:
+            log.warning("bot name persist via web failed: %s", e)
+        if cog is not None:
+            cog.identities[gid] = {"nick": nick, "avatar": avatar, "set_by": set_by}
     return {"ok": True}
 
 
@@ -698,7 +805,7 @@ a{{color:#8ab4ff;text-decoration:none}}
         guild_id = payload.get("guild") or None
         section = payload.get("section")
         data = payload.get("data") or {}
-        if section not in ("mod_log", "leveling", "rewards", "boost", "reactionrole", "welcomer", "xp_boost"):
+        if section not in ("mod_log", "leveling", "rewards", "boost", "reactionrole", "welcomer", "xp_boost", "bot_identity"):
             self._json(400, {"ok": False, "error": "Unknown section"})
             return
         try:

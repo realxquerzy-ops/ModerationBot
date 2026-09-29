@@ -6,18 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-MAX_NICK_LEN = 32
-MAX_AVATAR_BYTES = 1 << 20
-INJECTION_MARKERS = ("@everyone", "@here", "<@")
-
-
-def _decode_avatar(avatar):
-    if not avatar:
-        return None
-    try:
-        return base64.b64decode(avatar)
-    except Exception:
-        return None
+from identity_utils import MAX_AVATAR_BYTES, decode_avatar, validate_nick
 
 
 class BotIdentityCog(commands.Cog):
@@ -29,29 +18,6 @@ class BotIdentityCog(commands.Cog):
     def _require_manage(self, interaction) -> bool:
         return bool(interaction.user.guild_permissions.manage_guild)
 
-    def _validate_nick(self, guild, nick):
-        nick = nick.strip() if nick else ""
-        if not nick:
-            return "Nickname can't be empty."
-        if len(nick) > MAX_NICK_LEN:
-            return f"Nicknames must be **{MAX_NICK_LEN}** characters or fewer (you used {len(nick)})."
-        if any(ord(c) < 32 for c in nick):
-            return "That nickname contains invalid control characters."
-        low = nick.lower()
-        for marker in INJECTION_MARKERS:
-            if marker in low:
-                return "That nickname contains **mention syntax** (`@everyone`, `@here`, or a user ID), which is not allowed."
-        for m in guild.members:
-            if m.id == self.bot.user.id:
-                continue
-            display = (m.display_name or "").strip().lower()
-            if display and display == low:
-                return (
-                    "That name matches a real member of this server, which could get "
-                    "the bot reported for impersonation. Choose something else."
-                )
-        return None
-
     async def _apply_to_guild(self, guild, identity):
         me = guild.me
         if me is None:
@@ -59,7 +25,7 @@ class BotIdentityCog(commands.Cog):
         kwargs = {}
         if identity.get("nick") is not None:
             kwargs["nick"] = identity["nick"]
-        avatar = _decode_avatar(identity.get("avatar"))
+        avatar = decode_avatar(identity.get("avatar"))
         if avatar:
             kwargs["avatar"] = avatar
         if not kwargs:
@@ -104,7 +70,7 @@ class BotIdentityCog(commands.Cog):
         set_by = identity.get("set_by")
 
         embed = discord.Embed(
-            title=f"🤖 Identity — {guild.name}",
+            title=f"🤖 Bot Name — {guild.name}",
             color=discord.Color.blurple(),
             description=(
                 "Discord always shows the built-in **BOT** tag next to this bot's name, "
@@ -135,7 +101,7 @@ class BotIdentityCog(commands.Cog):
         description="Customize this server's bot name and profile picture.",
     )
 
-    @botidentity.command(name="show", description="Show the bot's global and per-server identity.")
+    @botidentity.command(name="show", description="Show the bot's global and per-server name and picture.")
     @discord.app_commands.guild_only()
     async def show(self, interaction: discord.Interaction):
         if not self._require_manage(interaction):
@@ -163,7 +129,7 @@ class BotIdentityCog(commands.Cog):
                 ephemeral=True,
             )
             return
-        err = self._validate_nick(interaction.guild, name)
+        err = validate_nick(name)
         if err:
             await interaction.response.send_message(f"❌ {err}", ephemeral=True)
             return
@@ -291,13 +257,13 @@ class BotIdentityCog(commands.Cog):
             await me.edit(**kwargs)
         except discord.Forbidden:
             await interaction.followup.send(
-                "❌ I couldn't reset my identity — missing **Manage Nicknames** permission.",
+                "❌ I couldn't reset my name/picture — missing **Manage Nicknames** permission.",
                 ephemeral=True,
             )
             return
         except Exception as e:
             await interaction.followup.send(
-                f"❌ Could not reset the identity: {e}", ephemeral=True
+                f"❌ Could not reset the name/picture: {e}", ephemeral=True
             )
             return
         new_nick = None if what in ("name", "all") else current.get("nick")
@@ -307,7 +273,7 @@ class BotIdentityCog(commands.Cog):
         else:
             await self._persist(interaction.guild.id, new_nick, new_avatar, interaction.user.id)
         await interaction.followup.send(
-            f"✅ Reset **{what}** — the bot is back to its default identity here.",
+            f"✅ Reset **{what}** — the bot is back to its default name and picture here.",
             ephemeral=True,
         )
 
