@@ -134,6 +134,11 @@ class Database:
             "multiplier DOUBLE PRECISION NOT NULL DEFAULT 1.0, "
             "PRIMARY KEY (guild_id, role_id))"
         )
+        self.execute(
+            "CREATE TABLE IF NOT EXISTS bot_identity ("
+            "guild_id BIGINT PRIMARY KEY, custom_nick TEXT, custom_avatar TEXT, "
+            "set_by BIGINT, updated_at TIMESTAMP DEFAULT NOW())"
+        )
 
     def save_web_session(self, token, user_id, username, manageable, expires):
         self.execute(
@@ -460,6 +465,32 @@ class Database:
 
     def delete_welcomer(self, guild_id):
         self.execute("DELETE FROM welcomer WHERE guild_id = %s", (guild_id,))
+
+    def get_bot_identity(self, guild_id):
+        row = self.fetchone(
+            "SELECT custom_nick, custom_avatar, set_by FROM bot_identity WHERE guild_id = %s",
+            (guild_id,),
+        )
+        if not row:
+            return None
+        return {"nick": row[0], "avatar": row[1], "set_by": row[2]}
+
+    def get_all_bot_identities(self):
+        rows = self.fetchall("SELECT guild_id, custom_nick, custom_avatar, set_by FROM bot_identity")
+        return {int(g): {"nick": n, "avatar": a, "set_by": int(s) if s is not None else None} for g, n, a, s in rows}
+
+    def set_bot_identity(self, guild_id, nick=None, avatar=None, set_by=None):
+        self.execute(
+            "INSERT INTO bot_identity (guild_id, custom_nick, custom_avatar, set_by, updated_at) "
+            "VALUES (%s, %s, %s, %s, NOW()) "
+            "ON CONFLICT (guild_id) DO UPDATE SET custom_nick = EXCLUDED.custom_nick, "
+            "custom_avatar = EXCLUDED.custom_avatar, set_by = EXCLUDED.set_by, "
+            "updated_at = NOW()",
+            (guild_id, nick, avatar, set_by),
+        )
+
+    def delete_bot_identity(self, guild_id):
+        self.execute("DELETE FROM bot_identity WHERE guild_id = %s", (guild_id,))
 
     def get_all_xp_boosts(self):
         channels = self.fetchall("SELECT guild_id, channel_id, multiplier FROM xp_boost_channels")
