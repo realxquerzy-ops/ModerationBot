@@ -53,9 +53,23 @@ class WelcomerCog(commands.Cog):
             except (TypeError, ValueError):
                 channel = None
             if isinstance(channel, discord.TextChannel):
-                return channel
+                try:
+                    can_send = channel.permissions_for(guild.me).send_messages
+                except Exception:
+                    can_send = False
+                if not can_send:
+                    self.log.warning(
+                        "configured welcome channel #%s (%s) denied Send Messages; falling back",
+                        channel.name, channel.id,
+                    )
+                else:
+                    return channel
         if getattr(guild, "system_channel", None) is not None:
-            return guild.system_channel
+            try:
+                if guild.system_channel.permissions_for(guild.me).send_messages:
+                    return guild.system_channel
+            except Exception:
+                pass
         for channel in guild.text_channels:
             try:
                 if channel.permissions_for(guild.me).send_messages:
