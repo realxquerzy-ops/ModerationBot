@@ -80,7 +80,7 @@ class WelcomerCog(commands.Cog):
                       settings.get(f"{kind}_enabled"),
                       guild.id in getattr(self.bot, "welcomer_cache", {}))
         if not settings.get(f"{kind}_enabled"):
-            return
+            return "disabled"
         explicit = settings.get(f"{kind}_channel") or ""
         if kind == "goodbye" and not explicit:
             explicit = settings.get("welcome_channel") or ""
@@ -89,7 +89,7 @@ class WelcomerCog(commands.Cog):
             self.log.warning("[%s] no channel found (explicit=%r text_channels=%d system=%r)",
                              kind, explicit, len(guild.text_channels),
                              getattr(guild, "system_channel", None) is not None)
-            return
+            return "no_channel"
         count = guild.member_count or 0
         text = settings.get(f"{kind}_text") or wc.DEFAULT_WELCOMER[f"{kind}_text"]
         content = self._format(text, member, count)
@@ -122,9 +122,12 @@ class WelcomerCog(commands.Cog):
                 msg = await channel.send(content=content, file=file, embed=embed)
             else:
                 msg = await channel.send(content=content)
+        except discord.Forbidden:
+            self.log.warning("welcomer send failed (%s) in %s: missing Send Messages permission", kind, channel.id)
+            return f"forbidden:{channel.id}"
         except Exception as e:
             self.log.warning("welcomer send failed (%s): %s", kind, e)
-            return
+            return f"error:{e}"
         self.log.info("[%s] posted to #%s (%s)", kind, channel.name, channel.id)
 
         emoji = settings.get(f"{kind}_emoji") or ""
@@ -133,6 +136,7 @@ class WelcomerCog(commands.Cog):
                 await msg.add_reaction(emoji)
             except Exception as e:
                 self.log.warning("welcomer reaction failed (%s): %s", kind, e)
+        return "ok"
 
     @welcomer_group.command(
         name="test",
@@ -159,12 +163,17 @@ class WelcomerCog(commands.Cog):
         explicit = settings.get(f"{kind_val}_channel") or ""
         channel = self._resolve_channel(guild, explicit)
         await interaction.response.defer(ephemeral=True)
-        await self._deliver(kind_val, interaction.user, WELCOME_ACCENT if kind_val == "welcome" else GOODBYE_ACCENT)
+        result = await self._deliver(kind_val, interaction.user, WELCOME_ACCENT if kind_val == "welcome" else GOODBYE_ACCENT)
+        status = {
+            "ok": "✅ message posted",
+            "disabled": "❌ this welcome/goodbye is disabled in settings",
+            "no_channel": "⚠️ no channel could be resolved",
+        }.get(result, f"❌ failed to send: {result}")
         desc = (
             f"Enabled: {enabled} · Channel: {channel.mention if channel else 'none'}"
             f" · Cache ids: {list(getattr(self.bot, 'welcomer_cache', {}).keys())}"
         )
-        await interaction.followup.send(f"✅ Test fired for **{label}**.\n{desc}", ephemeral=True)
+        await interaction.followup.send(f"✅ Test fired for **{label}**.\n{desc}\n{status}", ephemeral=True)
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
