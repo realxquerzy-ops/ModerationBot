@@ -273,10 +273,6 @@ class ReactionRoleCog(commands.Cog):
                 async for msg in channel.history(limit=200):
                     if not msg.reactions:
                         continue
-                    if msg.author.id != self.bot.user.id:
-                        continue
-                    if msg.embeds:
-                        continue
                     scanned += 1
                     if (cid, msg.id) in known:
                         kept += 1
