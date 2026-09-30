@@ -36,6 +36,7 @@ ADMINISTRATOR = 1 << 3
 MANAGE_GUILD = 1 << 5
 
 INVITE_PERMISSIONS = (
+    (1 << 5)   |  # Manage Server
     (1 << 6)   |  # Add Reactions
     (1 << 10)  |  # View Channels
     (1 << 11)  |  # Send Messages
@@ -43,6 +44,7 @@ INVITE_PERMISSIONS = (
     (1 << 14)  |  # Embed Links
     (1 << 17)  |  # Read Message History
     (1 << 18)  |  # Use External Emojis
+    (1 << 27)  |  # Manage Nicknames
     (1 << 28)     # Manage Roles
 )
 
