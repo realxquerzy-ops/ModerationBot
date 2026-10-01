@@ -40,6 +40,7 @@ INVITE_PERMISSIONS = (
     (1 << 6)   |  # Add Reactions
     (1 << 10)  |  # View Channels
     (1 << 11)  |  # Send Messages
+    (1 << 4)   |  # Manage Channels
     (1 << 13)  |  # Manage Messages
     (1 << 14)  |  # Embed Links
     (1 << 17)  |  # Read Message History

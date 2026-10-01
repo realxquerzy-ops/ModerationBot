@@ -46,7 +46,36 @@ class WelcomerCog(commands.Cog):
             self._avatar_cache[member.id] = None
             return None
 
-    def _resolve_channel(self, guild, explicit):
+    async def _grant_access(self, guild, channel):
+        me = guild.me
+        try:
+            perms = channel.permissions_for(me)
+        except Exception:
+            perms = None
+        if perms is not None and perms.send_messages and perms.view_channel:
+            return True
+        if perms is None or not (perms.manage_channels or me.guild_permissions.manage_channels):
+            self.log.warning(
+                "cannot self-grant in #%s (%s): bot lacks Manage Channels", channel.name, channel.id
+            )
+            return False
+        try:
+            await channel.set_permissions(
+                me,
+                view_channel=True,
+                send_messages=True,
+                reason="Welcomer enabled; ensuring the bot can post",
+            )
+            self.log.info("self-granted Send Messages in #%s (%s)", channel.name, channel.id)
+            return True
+        except discord.Forbidden:
+            self.log.warning("self-grant forbidden in #%s (%s)", channel.name, channel.id)
+            return False
+        except Exception as e:
+            self.log.warning("self-grant failed in #%s (%s): %s", channel.name, channel.id, e)
+            return False
+
+    async def _resolve_channel(self, guild, explicit):
         if explicit:
             try:
                 channel = guild.get_channel(int(explicit))
@@ -59,9 +88,11 @@ class WelcomerCog(commands.Cog):
                     can_send = False
                 if not can_send:
                     self.log.warning(
-                        "configured welcome channel #%s (%s) denied Send Messages; falling back",
+                        "configured welcome channel #%s (%s) denied Send Messages; self-granting",
                         channel.name, channel.id,
                     )
+                    if await self._grant_access(guild, channel):
+                        return channel
                 else:
                     return channel
         if getattr(guild, "system_channel", None) is not None:
@@ -98,7 +129,7 @@ class WelcomerCog(commands.Cog):
         explicit = settings.get(f"{kind}_channel") or ""
         if kind == "goodbye" and not explicit:
             explicit = settings.get("welcome_channel") or ""
-        channel = self._resolve_channel(guild, explicit)
+        channel = await self._resolve_channel(guild, explicit)
         if channel is None:
             self.log.warning("[%s] no channel found (explicit=%r text_channels=%d system=%r)",
                              kind, explicit, len(guild.text_channels),
@@ -175,8 +206,8 @@ class WelcomerCog(commands.Cog):
         settings = wc.get_welcomer(self.bot, guild.id)
         enabled = settings.get(f"{kind_val}_enabled")
         explicit = settings.get(f"{kind_val}_channel") or ""
-        channel = self._resolve_channel(guild, explicit)
         await interaction.response.defer(ephemeral=True)
+        channel = await self._resolve_channel(guild, explicit)
         result = await self._deliver(kind_val, interaction.user, WELCOME_ACCENT if kind_val == "welcome" else GOODBYE_ACCENT)
         status = {
             "ok": "✅ message posted",
