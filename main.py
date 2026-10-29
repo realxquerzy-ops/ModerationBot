@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import sys
+import time
 
 import aiohttp
 import discord
@@ -72,7 +73,10 @@ async def on_ready():
         logging.error("Sync error: %s", e)
     if not bot._keepalive_started:
         bot._keepalive_started = True
-        bot.loop.create_task(_self_ping_loop())
+        if os.getenv("KEEPALIVE", "1").strip().lower() in ("0", "false", "no", "off"):
+            logging.info("[keepalive] disabled (KEEPALIVE=0)")
+        else:
+            bot.loop.create_task(_self_ping_loop())
 
 
 @bot.event
@@ -100,19 +104,60 @@ def _get_public_url():
     return os.getenv("RENDER_EXTERNAL_URL") or os.getenv("PUBLIC_URL")
 
 
+def _in_keepalive_sleep_window():
+    """True inside KEEPALIVE_SLEEP_UTC (default "19-8"), when we stop pinging.
+
+    Render's free plan includes 750 instance-hours/month for the whole
+    workspace. With two free services, keeping both awake 24/7 burns the quota
+    and gets everything suspended for billing. Sleeping overnight keeps the
+    total under the limit. Set KEEPALIVE_SLEEP_UTC= to disable the window.
+    """
+    spec = (os.getenv("KEEPALIVE_SLEEP_UTC", "19-8") or "").strip()
+    if not spec:
+        return False
+    try:
+        start_s, end_s = spec.split("-", 1)
+        start, end = int(start_s), int(end_s)
+    except (ValueError, TypeError):
+        logging.warning("[keepalive] invalid KEEPALIVE_SLEEP_UTC=%r (example: 19-8)", spec)
+        return False
+    if start == end:
+        return False
+    hour = time.gmtime().tm_hour
+    if start < end:
+        return start <= hour < end
+    return hour >= start or hour < end
+
+
 async def _self_ping_loop():
+    """Keep the Render free web service awake during its active window.
+
+    Env vars:
+      KEEPALIVE=0             -> disable keepalive entirely (service sleeps)
+      KEEPALIVE_INTERVAL=600  -> ping interval in seconds (must be < 900)
+      KEEPALIVE_SLEEP_UTC=19-8-> do not ping during this UTC window (sleep)
+    """
     url = _get_public_url()
     if not url:
         logging.warning("[keepalive] PUBLIC_URL not set, self-ping disabled")
         return
+    try:
+        interval = max(60, int(os.getenv("KEEPALIVE_INTERVAL", "600")))
+    except ValueError:
+        interval = 600
+    sleep_spec = (os.getenv("KEEPALIVE_SLEEP_UTC", "19-8") or "").strip()
+    logging.info("[keepalive] interval=%ss sleep_window=%s UTC", interval, sleep_spec or "none")
     while True:
+        if _in_keepalive_sleep_window():
+            await asyncio.sleep(interval)
+            continue
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"{url.rstrip('/')}/health", timeout=aiohttp.ClientTimeout(total=15)) as resp:
                     logging.info("[keepalive] ping %s -> %s", url, resp.status)
         except Exception as e:
             logging.warning("[keepalive] ping failed: %s", e)
-        await asyncio.sleep(300)
+        await asyncio.sleep(interval)
 
 
 def _has_setup(path):
